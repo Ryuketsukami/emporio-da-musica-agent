@@ -21,6 +21,7 @@ Source brief: Artefact "Desafio Técnico – AI Engineer 2026" (Portuguese PDF, 
 14. [Repo and commits](#14-repo-and-commits)
 15. [Assumptions](#15-assumptions)
 16. [Limitations and out of scope](#16-limitations-and-out-of-scope)
+17. [Session logs, labels and report](#17-session-logs-labels-and-report) (added 2026-10-31, after delivery)
 
 ---
 
@@ -380,3 +381,48 @@ point; details follow. Index at the top.
 - L5. No memory across sessions (by choice, D6).
 - L6. Order verification in chat instead of a one-time code by email/SMS.
 - Out of scope: WhatsApp integration, web UI, multi-language replies.
+
+## 17. Session logs, labels and report
+
+Added after delivery, agreed with the author on 2026-10-31. Goal: keep every conversation as structured
+data that can later be replayed, measured, turned into eval cases, or prepared for training — without
+changing how Duda answers.
+
+### Decisions
+
+| ID | Decision | Chosen | Avoided, and why |
+|---|---|---|---|
+| D13 | Storage | One append-only JSONL event log per session, `_runtime/sessions/<id>.jsonl`, next to the `.md`. Raw and complete; training formats are produced later by a separate step. | Training on the `.md`: it cuts tool results, drops rejected replies and has no version info. Writing a training format in the app: formats change, raw events don't. |
+| D14 | Personal data | Customer e-mails and phones become per-session placeholders (`<EMAIL_1>`, `<PHONE_1>`); the same value keeps the same tag; the mapping is never stored. Store and partner contacts stay as they are. | Real values: not needed for training, LGPD risk. `***` masking: different values collapse into one, which makes trajectories contradictory (e.g. three wrong e-mails then the right one). |
+| D15 | Versions | A header event per session: app git commit + dirty flag, backend and configured model, the model id the API reports per call, hashes of the system prompt, tool definitions and `data/`. Labels carry the judge model and rubric version. | App version only: a prompt or data change alters behaviour with the same commit. |
+| D16 | Outcome labels | Computed after the session, outside the conversation: signals from code always; an LLM judge (Haiku 4.5, versioned rubric) on request. The judge returns `resolution` (resolved / partial / unresolved / handed_off) and `frustration` (0–2), each with an evidence quote that code checks against the transcript. Re-labeling appends a new `labels` event. | An `end_session` tool where Duda reports success and frustration: the model grades its own work, most chats end without it being called, and it adds a write path for a possibly hostile model. Booleans: too coarse. |
+| D17 | Summary | `python -m scripts.report` rebuilds rates (not sums) per version group from the session files and rewrites `_runtime/summary.json`. Chat sessions only by default; script, example and eval runs are tagged and left out. | A counter updated per session: read-modify-write races between processes, lost on a crash, cannot be recomputed when the rubric changes. |
+
+### Event log
+
+Every line: `{"t": <UTC ISO time>, "kind": <kind>, ...}`, written and flushed as it happens, so a crash
+keeps everything before it. All string values pass through the session's placeholder map.
+
+| kind | fields |
+|---|---|
+| `header` | `schema` (1), `session`, `source` (`chat` / `script` / `example` / `eval`), `app` {`commit`, `dirty`}, `backend` (`sdk` / `cli`), `model` (configured), `prompt_sha`, `tools_sha`, `data_sha`, `now_override` (ISO or null) |
+| `customer` | `text` |
+| `model_call` | `round`, `content` (blocks as returned), `model` (reported by the API, or null), `usage`, `latency_ms` |
+| `tool` | `name`, `input`, `result` (full) |
+| `guard` | `problems`, `rejected_text` (null for an empty reply) |
+| `fallback` | `reason` (`guard` / `tool_cap`), `problems`, `text` |
+| `error` | `error` (exception class name) |
+| `reply` | `text` |
+| `end` | — |
+| `labels` | `rubric_version`, `signals`, `judge` (object or null), `judge_model` (or null) |
+
+Code signals: `turns`, `tickets` {`complaint`, `human`}, `guard_hits`, `fallbacks`, `tool_cap_hit`,
+`order_misses`, `order_locked`, `tech_errors`, `repeated_question` (two customer messages ≥ 0.9 similar).
+
+### Config and commands
+
+`LLM_JUDGE` (default `false`), `LLM_JUDGE_MODEL` (default `claude-haiku-4-5`; dev backend uses `haiku`).
+`python -m src.cli --judge` labels with the judge at session end; `--source example` tags example runs.
+`python -m scripts.report [--all] [--label]`: `--label` judges sessions that have no judge label for the
+current rubric, then reports.
+
