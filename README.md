@@ -8,11 +8,12 @@
 4. [Choices](#choices)
 5. [Security: assume the model is hostile](#security-assume-the-model-is-hostile)
 6. [Data handling](#data-handling)
-7. [Assumptions](#assumptions)
-8. [Tests, evals and edge cases](#tests-evals-and-edge-cases)
-9. [Examples](#examples)
-10. [Limitations and what we would do with more time](#limitations-and-what-we-would-do-with-more-time)
-11. [AI use and time](#ai-use-and-time)
+7. [Session logs and labels](#session-logs-and-labels)
+8. [Assumptions](#assumptions)
+9. [Tests, evals and edge cases](#tests-evals-and-edge-cases)
+10. [Examples](#examples)
+11. [Limitations and what we would do with more time](#limitations-and-what-we-would-do-with-more-time)
+12. [AI use and time](#ai-use-and-time)
 
 The full design is in [`spec/SPEC.md`](spec/SPEC.md).
 
@@ -41,6 +42,9 @@ and your Claude subscription. The CLI must be installed and logged in.
 | `LLM_MODEL` | `claude-sonnet-5` | Model for the SDK backend. `claude-haiku-4-5` also works. |
 | `LLM_DEV` | `false` | `true` sends each model call through `claude -p` instead of the SDK. |
 | `LLM_DEV_MODEL` | `sonnet` | Model for the CLI backend. |
+| `LLM_JUDGE` | `false` | `true` labels every CLI session with the LLM judge, like `--judge`. |
+| `LLM_JUDGE_MODEL` | `claude-haiku-4-5` | Judge model for the SDK backend. |
+| `LLM_DEV_JUDGE_MODEL` | `haiku` | Judge model for the CLI backend. |
 
 Environment variables with the same names override `.env`.
 
@@ -52,7 +56,17 @@ python -m src.cli --script examples/scripts/04-arrependimento-pedido.txt --now 2
 ```
 
 `--script` replays a file of customer lines, one message per line. `--now` fixes the store clock.
-Each run writes a masked transcript to `_runtime/sessions/`, or to the path in `--out`.
+Each run writes a masked transcript to `_runtime/sessions/`, or to the path in `--out`. It also writes
+an event log to `_runtime/sessions/<id>.jsonl` (see [Session logs and labels](#session-logs-and-labels)).
+
+```bash
+python -m src.cli --judge                    # at the end, also label the session with the LLM judge
+python -m src.cli --script examples/scripts/05-cordas-loja-parceira.txt --source chat   # tag: chat, script or example
+python -m scripts.report                     # outcome rates per version, chat sessions only
+python -m scripts.report --all --label       # all sessions; judge the unjudged ones first
+```
+
+By default a `--script` run is tagged `script` and a live chat is tagged `chat`.
 
 ## Features
 
@@ -121,6 +135,10 @@ history, guard and transcript code that production runs.
 | `src/session.py` | session state, masking, transcripts, tickets |
 | `src/agent.py` | the loop |
 | `src/cli.py` | chat and `--script` replay |
+| `src/eventlog.py` | pseudonymized JSONL event log |
+| `src/versioning.py` | version header: commit, prompt, tool and data hashes |
+| `src/labels.py` | outcome labels: code signals and the LLM judge |
+| `scripts/report.py` | outcome rates per version |
 
 ## Choices
 
@@ -201,6 +219,56 @@ The §3.1 detail wins over the summary table's flat R$100.
 **Partner stores** are synthetic (`data/partner_stores.csv`, same CSV style as the given data).
 The manual says "suggest partner stores when possible", but it names none.
 
+## Session logs and labels
+
+Every session is also saved as structured, pseudonymized, versioned events, so it can be replayed, measured and turned into training data later.
+Logging only observes: Duda's replies, tools and guard work as before. The design is in [spec §17](spec/SPEC.md#17-session-logs-labels-and-report).
+
+The CLI writes `_runtime/sessions/<id>.jsonl`, also when `--out` moves the `.md` transcript. The eval runner writes
+one log per case to `_runtime/evals/`. Each event is one JSON line, written and flushed when it happens, so a crash keeps everything before it.
+
+| Event | Holds |
+|---|---|
+| `header` | the version fields below, the source (`chat`, `script`, `example`, `eval`) and the `--now` override |
+| `customer` | one customer message |
+| `model_call` | the blocks the model returned, the model id the API reports (null on the CLI backend), token usage, latency |
+| `tool` | the tool name, its input and the full result |
+| `guard` | a rejected or empty reply and the reasons |
+| `fallback` | the safe fallback text and its reason (`guard` or `tool_cap`) |
+| `error` | the exception class of a failed model call |
+| `reply` | the reply the customer saw |
+| `end` | the end of the session |
+| `labels` | outcome labels, added after the session |
+
+**Placeholders, not masking.** Customer e-mails and phones become `<EMAIL_1>`, `<PHONE_1>` and so on.
+The same value keeps the same tag for the whole session, and the value-to-tag mapping is never stored.
+The `.md` masking is not enough here: two different e-mails can mask to the same `l***@jmail.com`, so a
+replay can show one value where the customer typed several. Store and partner contacts stay readable.
+
+**Version header.** Each log starts with the git commit and a dirty flag, the backend and the configured model,
+and hashes of the system prompt, the tool definitions and `data/`. The commit alone is not enough: a dirty run
+can carry a different prompt or data under the same commit, and the hashes tell those runs apart.
+
+**Labels.** At the end of a session, code appends a `labels` event with the rubric version.
+
+- Code signals, always: turns, tickets, guard hits, fallbacks, the tool-round cap, order misses and lockout, technical errors, and a repeated customer message.
+- An LLM judge, on request (`--judge` or `LLM_JUDGE=true`): Claude Haiku 4.5 reads the chat and returns a resolution (`resolved`, `partial`, `unresolved`, `handed_off`) and a frustration level from 0 to 2, each with a quote. Code checks that each quote is in the chat and records the result as `resolution_evidence_found` and `frustration_evidence_found`. A failed judge call records an error and does not stop the run.
+- Labels can be redone: `python -m scripts.report --label` judges every session that has no valid judge label for the current rubric. It appends a new `labels` event, and the newest one counts. Eval logs get code signals only.
+
+**Report.** `python -m scripts.report` reads the logs in `_runtime/sessions/` (`--dir` picks another folder) and prints rates per version group (commit, prompt hash, model):
+resolution, frustration, fallback, guard hit and technical error, plus the number of handoff tickets. It writes the same
+numbers to `_runtime/summary.json`. It counts `chat` sessions only, because script, example and eval runs are not real
+customers. `--all` counts them too. It rebuilds the numbers from the logs on every run, so a new rubric or a late label
+shows on the next run.
+
+Avoided:
+
+- An `end_session` tool where Duda reports success and frustration: the model would grade its own work, most chats end without the call, and a possibly hostile model gets one more write path.
+- A counter updated after each session: two processes race on it, a crash loses it, and it cannot be recomputed when the rubric changes.
+- A training format written by the app: training formats change, raw events do not. A separate step can convert the logs later.
+
+The evals still use no LLM judge (see [Choices](#choices)). The judge only labels real sessions for analysis. It never decides whether an eval passes.
+
 ## Assumptions
 
 Each reading below fills a gap in the manual or the data. The installment reading, the stored totals
@@ -214,10 +282,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-121 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+152 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 121 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 152 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -226,7 +294,8 @@ python -m evals.run_evals --file edge --only e09-injecao
 (promo, PIX exclusion, the installment edges at R$50/80/100, combined payment, shipping thresholds),
 the clock, order match, mismatch and lock, return windows, tool input checks, the reply guard and every
 phone form it must find or skip, masking, ticket limits, the agent loop (retries, empty replies, the
-tool-round cap), and the CLI backend's JSON parsing and history.
+tool-round cap), the CLI backend's JSON parsing and history, and the session logs (placeholders, the version
+header, labels with a fake judge, the report).
 
 **Evals** (`evals/cases.jsonl`, 12 cases) are scripted conversations for the brief's scenarios.
 Code checks each one: which tools were called (`must_call`, `must_call_any`, `must_not_call`) and
@@ -271,7 +340,7 @@ To regenerate them:
 for s in examples/scripts/*.txt; do
   n=$(basename "$s" .txt); now=2026-11-02T10:00
   [ "$n" = 04-arrependimento-pedido ] && now=2025-12-26T10:00
-  python -m src.cli --script "$s" --now "$now" --out "examples/$n.md"
+  python -m src.cli --script "$s" --now "$now" --source example --out "examples/$n.md"
 done
 ```
 
@@ -286,6 +355,8 @@ The largest gap: code cannot catch a false statement that has no number in it.
 - **No cart, checkout or real shipping calculation by CEP.** Shipping outside Campo Grande is "calculated by CEP at checkout".
 - **No holidays or special-date hours.**
 - **No memory across sessions**, by choice (see [Choices](#choices)).
+- **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth.
+- **Session logs grow without rotation.** Each session adds a file to `_runtime/sessions/`, and nothing deletes old ones.
 - **Out of scope:** WhatsApp integration, a web UI, replies in other languages.
 
 ## AI use and time

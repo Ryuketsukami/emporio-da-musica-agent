@@ -95,7 +95,8 @@ README.md  .env.example  .gitignore  requirements.txt
 spec/SPEC.md
 data/                        original CSVs + políticas_da_loja.pdf (unchanged names),
                              policies.md (generated), partner_stores.csv (synthetic)
-scripts/pdf_to_md.py         regenerates data/policies.md (needs pypdf)
+scripts/pdf_text.py          PDF text for the transcription and the fidelity test (needs pypdf)
+scripts/report.py            outcome rates per version group → _runtime/summary.json (§17)
 src/
   config.py      .env loader + settings
   clock.py       store time (UTC−4), opening hours, "open now?", next opening
@@ -109,10 +110,13 @@ src/
   session.py     session state, masking, transcripts, tickets
   agent.py       the loop
   cli.py         interactive chat + --script replay   (entry: python -m src.cli)
+  eventlog.py    pseudonymized JSONL event log (§17)
+  versioning.py  session header: commit, prompt/tools/data hashes (§17)
+  labels.py      outcome labels: code signals + optional LLM judge (§17)
 tests/           unittest
 evals/           cases.jsonl, edge_cases.jsonl, run_evals.py
 examples/        scripts/*.txt + generated 0N-*.md
-_runtime/        sessions/, tickets.jsonl   (gitignored)
+_runtime/        sessions/ (.md + .jsonl), tickets.jsonl, summary.json   (gitignored)
 ```
 
 ### Backends (D4)
