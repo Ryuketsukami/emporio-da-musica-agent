@@ -21,6 +21,17 @@ PHONE_RE = re.compile(
     r"|(?:9\d{4}|[2-5]\d{3})-\d{4})"
     r"(?!\w)(?![.,/-]\d)"
 )
+# The looser spellings customers type, matched on the shape of a Brazilian phone: optional +55, optional DDD
+# (2 digits, optional leading 0, optional parentheses), then a mobile 9 + 4 + 4 or a landline [2-5] + 3 + 4
+# digits, with a space, dot or hyphen allowed between the groups ("(67) 9 9812-3456", "998123456",
+# "067998123456"). The guards are PHONE_RE's, so a phone may end before ", ", "/w" or a full stop, but not
+# inside a date, price, protocol, CNPJ or year range.
+LOOSE_PHONE_RE = re.compile(
+    r"(?<![\w/.,+-])(?!(?:19|20)\d{2}-(?:19|20)\d{2}\b)"
+    r"(?:\+55[ .-]?)?(?:(?:\(0?\d{2}\)|0?\d{2})[ .-]?)?"
+    r"(?:9[ .-]?\d{4}[ .-]?\d{4}|[2-5]\d{3}[ .-]?\d{4})"
+    r"(?!\w)(?![.,/-]\d)"
+)
 
 MAX_TICKETS = 3
 MAX_SUMMARY = 500
@@ -63,7 +74,9 @@ def mask(text: str, keep_phones: frozenset = frozenset()) -> str:
             return matched
         return mask_phone(matched)
 
-    return PHONE_RE.sub(_phone_sub, text)
+    # PHONE_RE first: its masked output ("9****-3456") no longer looks like a phone, so nothing is masked twice.
+    text = PHONE_RE.sub(_phone_sub, text)
+    return LOOSE_PHONE_RE.sub(_phone_sub, text)
 
 
 def clean_text(text: str, limit: int) -> str:

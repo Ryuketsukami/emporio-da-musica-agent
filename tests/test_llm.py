@@ -1,9 +1,16 @@
 import json
+import os
+import shutil
 import subprocess
 import unittest
+from pathlib import Path
+from unittest import mock
 from types import SimpleNamespace as NS
 
-from src.llm import CliBackend, LLMError, SdkBackend, cli_env, extract_json, render_conversation
+from src.config import Settings
+from src.labels import judge
+from src.llm import (TOOLS_INSTRUCTION, CliBackend, LLMError, SdkBackend, cli_env, extract_json,
+                     make_judge_backend, render_conversation)
 
 TOOLS = [{"name": "get_product", "description": "d", "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}}]
 HISTORY = [
@@ -25,10 +32,12 @@ class FakeMessages:
 class SdkTest(unittest.TestCase):
     def test_maps_blocks_and_caches_system(self):
         resp = NS(content=[NS(type="text", text="Vou ver."), NS(type="tool_use", id="tu1", name="get_product", input={"id_or_name": "GD20"})],
-                  usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=100, cache_creation_input_tokens=0))
+                  usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=100, cache_creation_input_tokens=0),
+                  model="claude-sonnet-5-20261001")
         fake = FakeMessages(resp)
         turn = SdkBackend("k", "claude-sonnet-5", client=NS(messages=fake)).call("SYS", HISTORY, TOOLS)
         self.assertEqual(turn.text, "Vou ver.")
+        self.assertEqual(turn.model, "claude-sonnet-5-20261001")
         self.assertEqual([(c.id, c.name, c.input) for c in turn.tool_calls], [("tu1", "get_product", {"id_or_name": "GD20"})])
         self.assertEqual(turn.content[1], {"type": "tool_use", "id": "tu1", "name": "get_product", "input": {"id_or_name": "GD20"}})
         self.assertEqual((turn.usage.input, turn.usage.cache_read), (10, 100))
@@ -62,6 +71,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
         self.assertEqual(kw["env"]["MAX_THINKING_TOKENS"], "0")
         self.assertIsNone(turn.text)
+        self.assertIsNone(turn.model)
         self.assertEqual([(c.name, c.input) for c in turn.tool_calls], [("get_product", {"id_or_name": "GD20"})])
         self.assertEqual(turn.content, [{"type": "tool_use", "id": turn.tool_calls[0].id, "name": "get_product", "input": {"id_or_name": "GD20"}}])
         self.assertIn("get_product", argv[-1])  # tool list is in the prompt
@@ -81,9 +91,92 @@ class CliTest(unittest.TestCase):
         with self.assertRaises(LLMError):
             CliBackend("sonnet", runner=FakeRunner("x", "y")).call("SYS", HISTORY, TOOLS)
 
+    def test_toolless_rubric_reply_is_plain_text(self):
+        reply = '```json\n{"resolution": "resolved", "resolution_evidence": "Oi", "frustration": 0, "frustration_evidence": ""}\n```'
+        turn = CliBackend("haiku", runner=FakeRunner(reply)).call("SYS", [{"role": "user", "content": "CLIENTE: Oi"}], [])
+        self.assertEqual(turn.text, reply)
+        self.assertEqual(turn.tool_calls, [])
+        self.assertEqual(turn.content, [{"type": "text", "text": reply}])
+        label = judge([{"kind": "customer", "text": "Oi"}], CliBackend("haiku", runner=FakeRunner(reply)))
+        self.assertEqual((label["resolution"], label["frustration"]), ("resolved", 0))
+        self.assertTrue(label["resolution_evidence_found"])
+
+    def test_toolless_prompt_has_no_tool_instruction(self):
+        runner = FakeRunner('{"resolution": "resolved"}')
+        CliBackend("haiku", runner=runner).call("SYS", [{"role": "user", "content": "CLIENTE: Oi"}], [])
+        prompt = runner.calls[0][0][-1]
+        self.assertNotIn("tool_calls", prompt)
+        self.assertNotIn("Ferramentas", prompt)
+        self.assertIn("CLIENTE: Oi", prompt)
+        tool_runner = FakeRunner('{"text": "Oi!", "tool_calls": []}')
+        CliBackend("sonnet", runner=tool_runner).call("SYS", HISTORY, TOOLS)
+        self.assertIn(TOOLS_INSTRUCTION, tool_runner.calls[0][0][-1])
+
+    def test_make_judge_backend(self):
+        dev = make_judge_backend(Settings("", "m", True, "sonnet", dev_judge_model="haiku"))
+        self.assertIsInstance(dev, CliBackend)
+        self.assertEqual(dev.model, "haiku")
+        sdk = make_judge_backend(Settings("k", "m", False, "sonnet", judge_model="claude-haiku-4-5"))
+        self.assertIsInstance(sdk, SdkBackend)
+        self.assertEqual((sdk.model, sdk.max_tokens), ("claude-haiku-4-5", 512))
+        with self.assertRaises(LLMError):
+            make_judge_backend(Settings("", "m", False, "sonnet"))
+
+    def test_toolless_envelope_reply_still_reads_text(self):
+        turn = CliBackend("haiku", runner=FakeRunner('{"text": "Oi!", "tool_calls": []}')).call("SYS", HISTORY, [])
+        self.assertEqual(turn.text, "Oi!")
+
     def test_env_drops_api_key_and_effort(self):
         env = cli_env({"PATH": "/bin", "ANTHROPIC_API_KEY": "k", "CLAUDE_EFFORT": "high"})
         self.assertEqual(env, {"PATH": "/bin", "MAX_THINKING_TOKENS": "0"})
+
+    def test_env_sets_home_when_given(self):
+        env = cli_env({"PATH": "/bin", "HOME": "/home/me"}, home="/tmp/empty")
+        self.assertEqual((env["HOME"], env["USERPROFILE"]), ("/tmp/empty", "/tmp/empty"))
+        self.assertEqual(cli_env({"HOME": "/home/me"})["HOME"], "/home/me")
+
+    def test_env_with_home_drops_config_dir(self):
+        self.assertNotIn("CLAUDE_CONFIG_DIR", cli_env({"CLAUDE_CONFIG_DIR": "/home/me/.claude"}, home="/tmp/empty"))
+        self.assertEqual(cli_env({"CLAUDE_CONFIG_DIR": "/home/me/.claude"})["CLAUDE_CONFIG_DIR"], "/home/me/.claude")
+
+    def test_empty_token_keeps_real_home(self):
+        reply = '{"text": "Oi!", "tool_calls": []}'
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "HOME": "/home/me"}):
+            runner = FakeRunner(reply)
+            CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
+        self.assertEqual(runner.calls[0][1]["env"]["HOME"], "/home/me")
+
+    def test_empty_home_is_removed_at_exit(self):
+        reply = '{"text": "Oi!", "tool_calls": []}'
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "t"}), \
+                mock.patch("src.llm.atexit.register") as register:
+            runner = FakeRunner(reply)
+            CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
+        home = runner.calls[0][1]["env"]["HOME"]
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        register.assert_called_once_with(shutil.rmtree, home, ignore_errors=True)
+
+    def test_empty_home_only_with_token(self):
+        reply = '{"text": "Oi!", "tool_calls": []}'
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "t", "HOME": "/home/me"}):
+            runner = FakeRunner(reply, reply)
+            backend = CliBackend("sonnet", runner=runner)
+            backend.call("SYS", HISTORY, TOOLS)
+            backend.call("SYS", HISTORY, TOOLS)
+        homes = [kw["env"]["HOME"] for _, kw in runner.calls]
+        self.assertTrue(Path(homes[0]).name.startswith("duda-cli-home-"))
+        self.addCleanup(os.rmdir, homes[0])
+        self.assertEqual(homes[0], homes[1])
+        self.assertEqual(os.listdir(homes[0]), [])
+        self.assertEqual(runner.calls[0][1]["env"]["USERPROFILE"], homes[0])
+
+        env_without = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_OAUTH_TOKEN"}
+        env_without["HOME"] = "/home/me"
+        with mock.patch.dict(os.environ, env_without, clear=True):
+            runner = FakeRunner(reply)
+            CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
+        self.assertEqual(runner.calls[0][1]["env"]["HOME"], "/home/me")
+        self.assertEqual(runner.calls[0][1]["env"].get("USERPROFILE"), env_without.get("USERPROFILE"))
 
     def test_render_and_extract(self):
         text = render_conversation(HISTORY)

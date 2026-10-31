@@ -10,9 +10,13 @@ from src.agent import Agent
 from src.clock import parse_now
 from src.config import ROOT, RUNTIME_DIR, load_settings
 from src.data import load_store
+from src.eventlog import EventLog, Pseudonymizer, public_contacts
+from src.labels import label_session
 from src.llm import make_backend
 from src.policies import load_policies
 from src.session import Session, new_session, save_transcript
+from src.tools import TOOLS
+from src.versioning import build_header
 
 DEFAULT_NOW = "2026-11-02T10:00"
 
@@ -72,15 +76,39 @@ def _called_tools(session: Session) -> list[str]:
     return names
 
 
-def run_case(case: dict, backend) -> tuple[list[str], list[str], Session]:
+def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[str], list[str], Session]:
+    """Logging and labelling never break a case: a failure while starting the log keeps the
+    case unlogged (`agent.events` stays `None`); a failed write during the case switches the log
+    off (`Agent._emit`); a failure while closing it out is reported but doesn't touch the replies
+    or tool calls already collected."""
     now_text = case.get("now", DEFAULT_NOW)
     now_fn = lambda: parse_now(now_text)
     store = load_store()
     policies = load_policies()
     session = new_session(now_fn())
     agent = Agent(backend, store, policies, session, now_fn)
+
+    log = None
+    if events_dir is not None:
+        try:
+            keep_phones, keep_emails = public_contacts(policies, store)
+            log = EventLog(events_dir / f"{case['id']}.jsonl", Pseudonymizer(keep_phones, keep_emails))
+            log.write("header", **build_header(session.id, "eval", backend.label, agent.system, TOOLS, now_text))
+            agent.events = log
+        except Exception as exc:
+            print(f"aviso: log do caso {case['id']} não gerado ({type(exc).__name__})")
+            log = None
+
     replies = [agent.reply(text) for text in case["messages"]]
     called = _called_tools(session)
+
+    if log is not None and agent.events is not None:  # skip a log switched off mid-case
+        try:
+            log.write("end")
+            label_session(log.path)
+        except Exception as exc:
+            print(f"aviso: log do caso {case['id']} não gerado ({type(exc).__name__})")
+
     return replies, called, session
 
 
@@ -117,7 +145,7 @@ def main(argv: list[str] | None = None, backend=None) -> int:
     passed = 0
     with out_path.open("w", encoding="utf-8") as f:
         for name, case in selected:
-            replies, called, session = run_case(case, backend)
+            replies, called, session = run_case(case, backend, events_dir=transcripts_dir)
             failures = evaluate(case, replies, called)
             save_transcript(session, case["id"], transcripts_dir / f"{case['id']}.md")
             record = {

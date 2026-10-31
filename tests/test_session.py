@@ -11,6 +11,16 @@ from src.session import (MAX_SUMMARY, TicketLimitError, append_ticket, clean_tex
 NOW = parse_now("2026-11-02T10:00")
 
 
+# Shared with tests/test_eventlog.py: loose phone shapes, the text that may follow them, and look-alikes.
+LOOSE_PHONES = ["(67) 9 9812-3456", "67 9 9812-3456", "9 9812-3456", "998123456", "99812 3456", "067998123456",
+                "+55 67 9 9812-3456", "(67)999998888"]
+AFTER_PHONE = [",", ", obrigado", "/whats", ".", ""]
+NOT_PHONES = ["nota-99812-3456", "ramal+99812-3456",
+              "2025-12-26", "2025-12-26 10:00", "26.12.2025", "2024 - 2025", "79.202-333", "79202 333",
+              "CEP 79202333.", "protocolo 20261031-0001", "R$ 10.000.000", "pedido 12345678", "29/12/2025",
+              "2.199,00", "BRTP3456789BR", "EM-20261102-0042", "12.345.678/0001-90", "79202-333"]
+
+
 class MaskTest(unittest.TestCase):
     def test_email_and_phone(self):
         self.assertEqual(mask_email("lucas.mendes@jmail.com"), "l***@jmail.com")
@@ -29,6 +39,23 @@ class MaskTest(unittest.TestCase):
         self.assertEqual(mask("CEP 79202-333, R$ 2.199,00, 29/12/2025"), "CEP 79202-333, R$ 2.199,00, 29/12/2025")
         self.assertEqual(mask("fone +5567999998888."), "fone +556******8888.")
         self.assertEqual(mask("CEP 79202333, ano 2024-2025"), "CEP 79202333, ano 2024-2025")
+
+    def test_loose_phones_are_masked_before_any_punctuation(self):
+        for raw in LOOSE_PHONES:
+            for after in AFTER_PHONE:
+                self.assertEqual(mask(f"meu número é {raw}{after}"), f"meu número é {mask_phone(raw)}{after}", raw + after)
+
+    def test_phone_look_alikes_are_not_masked(self):
+        for text in NOT_PHONES:
+            self.assertEqual(mask(text), text)
+
+    def test_loose_phone_forms_are_masked(self):
+        cases = {"(67) 9 9812-3456": "(67) 9 ****-3456", "9 9812-3456": "9 98**-3456", "998123456": "998**3456"}
+        for raw, masked in cases.items():
+            self.assertEqual(mask(f"fone {raw}."), f"fone {masked}.", raw)
+        self.assertEqual(mask("fone (67) 99812-3456 ou (67) 9 9812-3456"), "fone (67) 9****-3456 ou (67) 9 ****-3456")
+        self.assertEqual(mask("loja 67 3341 4444.", keep_phones=frozenset({"33414444"})), "loja 67 3341 4444.")
+        self.assertEqual(mask("CEP 79202-333. Anos 2024-2025."), "CEP 79202-333. Anos 2024-2025.")
 
     def test_clean_text(self):
         self.assertEqual(clean_text("a\x00b\x1b[31mc\n d", 500), "ab[31mc\n d")

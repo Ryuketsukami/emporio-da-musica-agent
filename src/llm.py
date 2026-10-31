@@ -8,9 +8,12 @@ listing them, and its usage numbers come from the CLI's own accounting, not
 the SDK's — they are not comparable to a production run's.
 """
 
+import atexit
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from typing import Mapping
 from uuid import uuid4
@@ -53,6 +56,7 @@ class Turn:
     tool_calls: list[ToolCall]
     usage: Usage
     content: list[dict]
+    model: str | None = None
 
 
 def _content_from_tool_calls(tool_calls: list[ToolCall]) -> list[dict]:
@@ -101,7 +105,8 @@ class SdkBackend:
             cache_read=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
             cache_write=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
         )
-        return Turn(text="\n".join(texts) if texts else None, tool_calls=tool_calls, usage=usage, content=content)
+        return Turn(text="\n".join(texts) if texts else None, tool_calls=tool_calls, usage=usage, content=content,
+                    model=getattr(resp, "model", None))
 
 
 def render_conversation(messages: list[dict]) -> str:
@@ -142,13 +147,19 @@ def extract_json(text: str) -> dict:
         return json.loads(text[start:end + 1])
 
 
-def cli_env(base: Mapping[str, str]) -> dict[str, str]:
+def cli_env(base: Mapping[str, str], home: str | None = None) -> dict[str, str]:
     """The environment the claude CLI gets: no API key (forces subscription login,
-    never API billing), no inherited effort override, and thinking off."""
+    never API billing), no inherited effort override, and thinking off. `home`
+    replaces HOME and USERPROFILE and drops CLAUDE_CONFIG_DIR, so the CLI cannot
+    read the account owner's profile (it puts their e-mail into the model's context)."""
     env = dict(base)
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("CLAUDE_EFFORT", None)
     env["MAX_THINKING_TOKENS"] = "0"
+    if home is not None:
+        env["HOME"] = home
+        env["USERPROFILE"] = home
+        env.pop("CLAUDE_CONFIG_DIR", None)
     return env
 
 
@@ -157,12 +168,25 @@ class CliBackend:
         self.model = model
         self.runner = runner
         self.timeout = timeout
+        self._empty_home: str | None = None
 
     @property
     def label(self) -> str:
         return f"cli:{self.model}"
 
+    def _home(self) -> str | None:
+        """An empty temp home, once per instance and removed at exit, but only with a
+        CLAUDE_CODE_OAUTH_TOKEN: without it the CLI's login lives in the real home."""
+        if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            return None
+        if self._empty_home is None:
+            self._empty_home = tempfile.mkdtemp(prefix="duda-cli-home-")
+            atexit.register(shutil.rmtree, self._empty_home, ignore_errors=True)
+        return self._empty_home
+
     def _build_prompt(self, messages: list[dict], tools: list[dict]) -> str:
+        if not tools:  # a tool-less caller (the judge) gives its own reply format in the system prompt
+            return render_conversation(messages)
         tool_lines = "\n".join(
             json.dumps({"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}, ensure_ascii=False)
             for t in tools
@@ -187,7 +211,7 @@ class CliBackend:
             "--no-session-persistence",
             prompt,
         ]
-        proc = self.runner(argv, capture_output=True, text=True, timeout=self.timeout, cwd=str(ROOT), env=cli_env(os.environ))
+        proc = self.runner(argv, capture_output=True, text=True, timeout=self.timeout, cwd=str(ROOT), env=cli_env(os.environ, self._home()))
         if proc.returncode != 0:
             raise LLMError(f"claude cli exited {proc.returncode}: {proc.stderr[-500:]}")
         return proc
@@ -215,7 +239,10 @@ class CliBackend:
             ToolCall(id=f"cli_{uuid4().hex[:12]}", name=tc["name"], input=tc["input"])
             for tc in data.get("tool_calls") or []
         ]
-        text = data.get("text")
+        if not tools and "text" not in data and "tool_calls" not in data:
+            text = envelope.get("result", "")  # a tool-less caller (the judge) asked for its own JSON shape
+        else:
+            text = data.get("text")
         content = ([{"type": "text", "text": text}] if text else []) + _content_from_tool_calls(tool_calls)
         return Turn(text=text, tool_calls=tool_calls, usage=usage, content=content)
 
@@ -226,3 +253,17 @@ def make_backend(settings: Settings) -> SdkBackend | CliBackend:
     if not settings.api_key:
         raise LLMError("LLM_API_KEY is empty; set it in .env or use LLM_DEV=true")
     return SdkBackend(settings.api_key, settings.model)
+
+
+def make_judge_backend(settings: Settings) -> SdkBackend | CliBackend:
+    if settings.dev:
+        return CliBackend(settings.dev_judge_model)
+    if not settings.api_key:
+        raise LLMError("LLM_API_KEY is empty; set it in .env or use LLM_DEV=true")
+    return SdkBackend(settings.api_key, settings.judge_model, max_tokens=512)
+
+
+def judge_model_name(settings: Settings) -> str:
+    """The judge model name recorded on a `labels` event, matching whichever backend
+    `make_judge_backend` would build."""
+    return settings.dev_judge_model if settings.dev else settings.judge_model
