@@ -31,12 +31,14 @@ def sha12(text: str) -> str:
 
 
 def data_sha(data_dir: Path = DATA_DIR) -> str:
-    """SHA-256 over every file's (relative path, bytes) under `data_dir`, sorted by path."""
+    """SHA-256 over every file's (relative path, bytes) under `data_dir`, sorted by path. Each
+    part is prefixed with its length, so moving bytes between a name and its content changes the hash."""
     hasher = hashlib.sha256()
     paths = sorted(p for p in data_dir.rglob("*") if p.is_file())
     for path in paths:
-        hasher.update(path.relative_to(data_dir).as_posix().encode("utf-8"))
-        hasher.update(path.read_bytes())
+        for part in (path.relative_to(data_dir).as_posix().encode("utf-8"), path.read_bytes()):
+            hasher.update(f"{len(part)}:".encode("ascii"))
+            hasher.update(part)
     return hasher.hexdigest()[:12]
 
 

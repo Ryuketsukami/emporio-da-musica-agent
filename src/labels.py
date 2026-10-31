@@ -14,6 +14,7 @@ from src.llm import extract_json
 
 RUBRIC_VERSION = "1"
 RESOLUTIONS = ("resolved", "partial", "unresolved", "handed_off")
+REPEAT_MIN_CHARS = 15  # shorter messages ("sim", "ok") repeat naturally
 
 JUDGE_SYSTEM = (
     "You label one finished customer-service chat between a music store's assistant (DUDA) and a customer "
@@ -52,7 +53,7 @@ def code_signals(events: list[dict]) -> dict:
         e.get("result") or {} for e in events if e.get("kind") == "tool" and e.get("name") == "get_order"
     ]
 
-    normed_texts = [_norm(t) for t in customer_texts]
+    normed_texts = [n for n in (_norm(t) for t in customer_texts) if len(n) >= REPEAT_MIN_CHARS]
     repeated_question = any(
         SequenceMatcher(None, normed_texts[i], normed_texts[j]).ratio() >= 0.9
         for i in range(len(normed_texts))

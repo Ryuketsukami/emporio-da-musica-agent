@@ -7,8 +7,10 @@ from pathlib import Path
 from unittest import mock
 from types import SimpleNamespace as NS
 
+from src.config import Settings
 from src.labels import judge
-from src.llm import CliBackend, LLMError, SdkBackend, cli_env, extract_json, render_conversation
+from src.llm import (TOOLS_INSTRUCTION, CliBackend, LLMError, SdkBackend, cli_env, extract_json,
+                     make_judge_backend, render_conversation)
 
 TOOLS = [{"name": "get_product", "description": "d", "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}}]
 HISTORY = [
@@ -98,6 +100,27 @@ class CliTest(unittest.TestCase):
         label = judge([{"kind": "customer", "text": "Oi"}], CliBackend("haiku", runner=FakeRunner(reply)))
         self.assertEqual((label["resolution"], label["frustration"]), ("resolved", 0))
         self.assertTrue(label["resolution_evidence_found"])
+
+    def test_toolless_prompt_has_no_tool_instruction(self):
+        runner = FakeRunner('{"resolution": "resolved"}')
+        CliBackend("haiku", runner=runner).call("SYS", [{"role": "user", "content": "CLIENTE: Oi"}], [])
+        prompt = runner.calls[0][0][-1]
+        self.assertNotIn("tool_calls", prompt)
+        self.assertNotIn("Ferramentas", prompt)
+        self.assertIn("CLIENTE: Oi", prompt)
+        tool_runner = FakeRunner('{"text": "Oi!", "tool_calls": []}')
+        CliBackend("sonnet", runner=tool_runner).call("SYS", HISTORY, TOOLS)
+        self.assertIn(TOOLS_INSTRUCTION, tool_runner.calls[0][0][-1])
+
+    def test_make_judge_backend(self):
+        dev = make_judge_backend(Settings("", "m", True, "sonnet", dev_judge_model="haiku"))
+        self.assertIsInstance(dev, CliBackend)
+        self.assertEqual(dev.model, "haiku")
+        sdk = make_judge_backend(Settings("k", "m", False, "sonnet", judge_model="claude-haiku-4-5"))
+        self.assertIsInstance(sdk, SdkBackend)
+        self.assertEqual((sdk.model, sdk.max_tokens), ("claude-haiku-4-5", 512))
+        with self.assertRaises(LLMError):
+            make_judge_backend(Settings("", "m", False, "sonnet"))
 
     def test_toolless_envelope_reply_still_reads_text(self):
         turn = CliBackend("haiku", runner=FakeRunner('{"text": "Oi!", "tool_calls": []}')).call("SYS", HISTORY, [])

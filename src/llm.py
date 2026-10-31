@@ -185,6 +185,8 @@ class CliBackend:
         return self._empty_home
 
     def _build_prompt(self, messages: list[dict], tools: list[dict]) -> str:
+        if not tools:  # a tool-less caller (the judge) gives its own reply format in the system prompt
+            return render_conversation(messages)
         tool_lines = "\n".join(
             json.dumps({"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}, ensure_ascii=False)
             for t in tools

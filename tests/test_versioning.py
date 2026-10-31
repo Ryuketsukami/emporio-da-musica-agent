@@ -34,6 +34,12 @@ class VersioningTest(unittest.TestCase):
         (d / "a.csv").write_text("2", encoding="utf-8")
         self.assertNotEqual(first, data_sha(d))
 
+    def test_data_sha_has_no_name_content_boundary_collision(self):
+        d1, d2 = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+        (d1 / "a").write_bytes(b"bc")
+        (d2 / "ab").write_bytes(b"c")
+        self.assertNotEqual(data_sha(d1), data_sha(d2))
+
     def test_header(self):
         run = fake_run({"rev-parse": ("b" * 40 + "\n", 0), "status": ("", 0)})
         h = build_header("20261102-100000-abcd", "chat", "sdk:claude-sonnet-5", "SYS", [{"name": "t"}], None, run=run)

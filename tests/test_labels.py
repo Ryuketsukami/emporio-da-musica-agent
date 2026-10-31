@@ -33,6 +33,10 @@ class SignalsTest(unittest.TestCase):
             "turns": 2, "tickets": {"complaint": 0, "human": 2}, "guard_hits": 1, "fallbacks": 1, "tool_cap_hit": False,
             "order_misses": 1, "order_locked": True, "tech_errors": 1, "repeated_question": True})
 
+    def test_short_repeats_are_not_repeated_questions(self):
+        events = [ev("customer", text="sim"), ev("customer", text="sim"), ev("customer", text="ok, obrigado")]
+        self.assertFalse(code_signals(events)["repeated_question"])
+
     def test_transcript_text(self):
         t = transcript_text(EVENTS)
         self.assertTrue(t.startswith("CLIENTE: Status do pedido 5? <EMAIL_1>\nDUDA: Não encontrei esse pedido."))
