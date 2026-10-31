@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None, backend=None) -> int:
 
     title = args.title or script_title or DEFAULT_TITLE
     now = now_fn()
-    note = f"Gerado por python -m src.cli em {now:%d/%m/%Y %H:%M} ({TZ_LABEL}) · backend {backend.label}"
+    note = f"Gerado por python -m src.cli em {now:%d/%m/%Y %H:%M}, {TZ_LABEL} · backend {backend.label}"
     keep_phones = _keep_phones(policies, store)
     out_path = args.out if args.out else SESSIONS_DIR / f"{session.id}.md"
     saved = save_transcript(session, title, out_path, note, keep_phones)

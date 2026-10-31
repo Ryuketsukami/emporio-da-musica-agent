@@ -160,3 +160,4 @@ class CliTest(unittest.TestCase):
         self.assertTrue(md.startswith("# Consulta de pedido"))
         self.assertIn("**Cliente:** meu email é l***@jmail.com", md)
         self.assertIn("**Duda:** Obrigada!", md)
+        self.assertIn("_Gerado por python -m src.cli em 02/11/2026 10:00, horário de Campo Grande (UTC−4) · backend fake_", md)
