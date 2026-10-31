@@ -1,6 +1,22 @@
 # Eval results
 
-## Latest SDK run (2026-10-31, after the date rule and the option-listing tool errors)
+## Prompt flags on vs off (2026-10-31, current code)
+
+`claude-sonnet-5`, 3 full runs per setting, 27 cases each. Both settings have the shipping check on
+(a shipping question about a product must be answered from `quote`). `e13` gives the subject in a
+second message.
+
+| Setting | Run 1 | Run 2 | Run 3 | Total | Misses |
+|---|---|---|---|---|---|
+| all three flags on (default) | 27/27 | 27/27 | 26/27 | 80/81 | `c11`: explained warranty windows, no complaint ticket |
+| all flags off | 27/27 | 26/27 | 27/27 | 80/81 | `e13`: asked more questions, no ticket |
+
+An earlier batch (3 runs per setting) had a first version of the shipping check that fired on any
+shipping remark. It sent good price answers back, and the retry dropped the answer (`c12`, `c03`), so
+that batch's totals are not comparable. Its targeted cases still count: `e13` failed 3 of 6 runs
+without flags and 0 of 6 with them; `e11` failed 1 of 6 without and 0 of 6 with them.
+
+## SDK run after the date rule and the option-listing tool errors (before the flags)
 
 **25 of 27 cases pass** (cases 11/12, edge 14/15), `claude-sonnet-5`, one pass, `python -m evals.run_evals`.
 

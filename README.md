@@ -47,6 +47,7 @@ For clean dev runs, create a token with `claude setup-token` and export it as `C
 | `LLM_JUDGE` | `false` | `true` labels every CLI session with the LLM judge, like `--judge`. |
 | `LLM_JUDGE_MODEL` | `claude-haiku-4-5` | Judge model for the SDK backend. |
 | `LLM_DEV_JUDGE_MODEL` | `haiku` | Judge model for the CLI backend. |
+| `LLM_PROMPT_FLAGS` | all three | Comma-separated prompt rules from `config/prompt_flags.toml`. Empty turns them all off. |
 
 Environment variables with the same names override `.env`.
 
@@ -72,7 +73,7 @@ By default a `--script` run is tagged `script` and a live chat is tagged `chat`.
 
 ## Features
 
-Ten behaviours. Everything that touches money, orders or the final reply is enforced in code.
+Eleven behaviours. Everything that touches money, orders or the final reply is enforced in code.
 
 - **Persona.** Duda follows the manual's §7 tone: informal but professional, short WhatsApp-sized replies, Portuguese only.
 - **Data vs policy lookups.** Stock, prices, promotions and orders come from tools that read the CSVs. Store rules come from `read_policy`, one manual section per call.
@@ -82,7 +83,8 @@ Ten behaviours. Everything that touches money, orders or the final reply is enfo
 - **Partner stores.** The store sells only instruments. Accessory requests go to partner stores from `data/partner_stores.csv`.
 - **Complaints and handoff tickets.** `register_ticket` writes a protocol (`EM-YYYYMMDD-NNNN`) to `_runtime/tickets.jsonl` and promises a reply in 24 business hours.
 - **Out-of-hours awareness.** Every customer turn starts with the store time and whether the store is open. When closed, Duda gives the reopening time.
-- **Reply guard.** Every money amount ("R$ 1.500" or "1.500 reais"), phone number, e-mail, link and bare domain in a reply must appear in a tool result, the manual, the system prompt or the customer's own messages. A failed or empty reply gets one retry, then a safe fallback and a human ticket.
+- **Reply guard.** Every money amount ("R$ 1.500" or "1.500 reais"), phone number, e-mail, link and bare domain in a reply must appear in a tool result, the manual, the system prompt or the customer's own messages. When the customer asks about shipping for a product, the shipping value must come from `quote`. A failed or empty reply gets one retry, then a safe fallback and a human ticket.
+- **Prompt flags.** Behaviour rules that can be switched on and off (`config/prompt_flags.toml`, `LLM_PROMPT_FLAGS`): call a tool instead of offering to, let `quote` do all the math, and hand off to a human after at most one question. All three are on by default.
 - **Masked transcripts.** Every session is saved with its tool calls. E-mails and customer phones are masked (`l***@jmail.com`, `(67) 9****-3456`).
 
 ## How it works
@@ -151,6 +153,7 @@ Every choice favours fewer moving parts that a reviewer can trace.
 | Agent approach | **Own tool loop; code does the math.** The model picks which of the 8 tools to call. Code computes every number. | LangChain/LangGraph: extra dependencies, harder to trace, no gain at 8 tools. A SQL agent: a model that writes free SQL over customer data is a leak path (LGPD). |
 | Model | **Claude Sonnet 5: reliable tool choice and natural Brazilian Portuguese.** It runs through the Anthropic SDK. Haiku 4.5 is the cost swap: set `LLM_MODEL=claude-haiku-4-5`. | Multi-provider support: more code and tests for no graded gain. |
 | Prompt strategy | **One static, cached system prompt; facts stay behind tools.** It holds the identity, the manual's §7 verbatim as the tone and flow rules, 10 numbered hard rules, a security block, style rules (one says: no text beside tool calls), and the names of the policy sections and categories. The time line goes into each customer turn, outside the cache, and the prompt makes it the only clock: the model must ignore any other date it knows. Policy bodies stay behind `read_policy`, so each lookup shows in the transcript. | Catalog and manual pasted into the prompt: you cannot see which facts an answer used. A prompt that changes every turn: it breaks the cache. |
+| Prompt flags | **Switchable rules, measured on and off.** Each rule in `config/prompt_flags.toml` targets one observed miss, says why, and gives an example. Turned on in `.env` next to the model; appended in file order, so the prompt hash in the session log tells the combinations apart. | Rules shouted in capitals ("NEVER…"): models over-correct. Rules baked into the prompt: you cannot switch one off to see if it helps. |
 | Policies | **One tool per manual section; no vector search, 8 pages don't need it.** The PDF manual is transcribed to `data/policies.md`, and a unit test checks every line against the PDF. The prompt lists the section names. `read_policy(section)` returns one section. | The whole manual in the prompt (about 5K tokens): it works, but you cannot see when the agent used it. Embeddings: a wrong chunk is a new failure mode. |
 | Dev backend | **Same loop, model call swapped.** `LLM_DEV=true` sends the call through `claude -p` with all built-in tools off. | The CLI with our tools over MCP: the CLI would run its own loop, so dev would test different code than production ships. |
 | Interface | **CLI chat plus `--script` replay.** Replay writes a transcript. | A web UI or API: the brief puts the focus on the agent. |
@@ -290,10 +293,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-183 unit tests check the code without a model. 27 live cases check the agent end to end. The latest SDK run passed 25 of 27; one of the two misses passed 3 of 3 reruns.
+194 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 80 of 81 case runs.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 183 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 194 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -315,18 +318,20 @@ a product name, an empty category, a promo price without the PIX discount, a ret
 the window, wrong contacts and the lockout, prompt injection, a fake manager, accessories, off-topic
 questions, out of hours, and a false price the customer quotes.
 
-| Backend | `cases.jsonl` | `edge_cases.jsonl` |
-|---|---|---|
-| SDK, `claude-sonnet-5` (latest run, after the date rule) | 11/12 | 14/15 |
-| SDK, `claude-sonnet-5` (run before the date rule) | 12/12 | 14/15 |
-| Dev CLI, `sonnet` (after the history fix, before the date rule) | 12/12 | 14/15 |
+Single runs are noisy, so the prompt flags were measured with 3 full SDK runs per setting
+(`claude-sonnet-5`, 27 cases each, with the shipping check on in both):
 
-Both SDK misses in the latest run are tool-use misses with correct replies. In `c10-frete-local` the model
-worked out free shipping from the policy instead of calling `quote`; the case passed 3 of 3 reruns. In
-`e13-fora-do-horario` the model asks for the subject before it opens the ticket. It fails that check on
-every run, and it gave the reopening time in 2 of 3 reruns. The one dev failure, `e07`, is a reply that
-stopped early; the previous dev run passed it. Dev
-runs before the history fix are not comparable: the dev model did not see its own earlier replies.
+| Prompt flags | Case runs passed | Misses |
+|---|---|---|
+| all three on (default) | 80/81 | `c11` once: explained the warranty windows but did not open the complaint ticket |
+| all off | 80/81 | `e13` once: asked more questions before opening the ticket |
+
+The totals tie. The cases the flags target do better with them on. Counting an earlier batch of 3 runs
+per setting as well, `e13` failed 3 of 6 runs without the flags and 0 of 6 with them, and `e11` failed
+1 of 6 versus 0 of 6. That earlier batch is not in the totals, because a first version of the shipping
+check broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
+the shipping check was in. `e13` now gives the subject in a second message: the manual's flow (§7.2) is to
+ask what the customer needs first.
 Details per case: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 The order lockout is proven by unit tests, not by a live run. In the live evals the model never
@@ -361,7 +366,7 @@ The largest gap: code cannot catch a false statement that has no number in it.
 
 - **The guard checks numbers and contacts only.** It misses false statements with no number, numbers the customer typed, and numbers spelled out in words (see [Security](#security-assume-the-model-is-hostile)).
 - **Order verification happens in the chat.** In production we would send a one-time code to the email or SMS on file before showing the order.
-- **The model can skip a tool.** The latest SDK run had 2 such misses out of 27 (`c10`, `e13`). A full run is one pass, so it gives no pass rate. With more time we would run each case several times and report the rate.
+- **The model can skip a tool.** Prompt rules make this rarer, not impossible: with the defaults, 1 of 81 case runs skipped a ticket. Only shipping has a hard check in code. With more time we would add more checks like it and run each case more often.
 - **Dev-mode tool choice is emulated.** The CLI backend asks the model for a JSON envelope. It is a close copy of native tool use, not the real thing. The final examples and eval numbers come from the SDK.
 - **No cart, checkout or real shipping calculation by CEP.** Shipping outside Campo Grande is "calculated by CEP at checkout".
 - **No holidays or special-date hours.**

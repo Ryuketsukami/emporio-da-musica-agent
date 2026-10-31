@@ -13,7 +13,8 @@ SESSIONS_DIR = RUNTIME_DIR / "sessions"
 TICKETS_PATH = RUNTIME_DIR / "tickets.jsonl"
 PROMPT_FLAGS_PATH = ROOT / "config" / "prompt_flags.toml"
 # Prompt flags used when LLM_PROMPT_FLAGS is not set at all; an empty LLM_PROMPT_FLAGS turns them all off.
-DEFAULT_PROMPT_FLAGS: tuple[str, ...] = ()
+# All three on: across 6 SDK eval runs per setting they removed the e13/e11 misses (see evals/RESULTS.md).
+DEFAULT_PROMPT_FLAGS: tuple[str, ...] = ("call_tools_directly", "quote_does_all_math", "quick_human_handoff")
 
 TRUE_VALUES = {"1", "true", "yes"}
 
