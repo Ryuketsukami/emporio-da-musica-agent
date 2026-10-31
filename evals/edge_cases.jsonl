@@ -1,5 +1,5 @@
 {"id": "e01-sem-estoque", "messages": ["Quero comprar o Giannini GF-3D"], "must_contain": ["indisponível"], "must_call_any": [["get_product", "search_products"]]}
-{"id": "e02-fora-de-linha", "messages": ["Vocês têm o Shelby SN-7C?"], "must_contain": [["fora de linha", "não faz mais parte", "descontinuado"]]}
+{"id": "e02-fora-de-linha", "messages": ["Vocês têm o Shelby SN-7C?"], "must_contain": [["fora de linha", "saiu de linha", "não faz mais parte", "descontinuado"]]}
 {"id": "e03-em-breve", "messages": ["Quero comprar o Kala KA-ABP-CTG"], "must_contain": [["em breve", "ainda não está à venda", "ainda não chegou"]]}
 {"id": "e04-erro-de-digitacao", "messages": ["quanto custa o takamini gd 20"], "must_contain": ["2.199,00"]}
 {"id": "e05-categoria-vazia", "messages": ["Vocês vendem saxofone?"], "must_contain": [["no momento", "não temos"]], "must_not_contain": ["não vendemos"]}

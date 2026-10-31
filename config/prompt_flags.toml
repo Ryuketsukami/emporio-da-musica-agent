@@ -14,3 +14,7 @@ text = "Sempre que o cliente perguntar sobre frete, total de um pedido, PIX ou p
 [quick_human_handoff]
 why = "e13: asked for a human, Duda kept asking questions before opening the ticket."
 text = "Quando o cliente pedir para falar com uma pessoa da equipe, faça no máximo uma pergunta (o assunto). Com a resposta, abra o chamado com register_ticket nessa mesma resposta, mesmo sem número de pedido, e informe o protocolo e quando a equipe volta."
+
+[register_complaints_directly]
+why = "c11: asked to register a complaint, Duda said she would, then asked one more question and opened no ticket."
+text = "Quando o cliente pedir para registrar uma reclamação, abra o chamado com register_ticket nessa mesma resposta, mesmo que os prazos já tenham passado ou que faltem detalhes, e informe o protocolo e o prazo de retorno. Se precisar de mais detalhes, pergunte depois de abrir o chamado."

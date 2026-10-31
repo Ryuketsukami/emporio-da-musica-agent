@@ -51,10 +51,20 @@ class FakeJudge:
         self.calls.append((system, messages, tools))
         if isinstance(self.reply, Exception):
             raise self.reply
-        return Turn(self.reply, [], Usage(), [{"type": "text", "text": self.reply}])
+        return Turn(self.reply, [], Usage(), [{"type": "text", "text": self.reply}],
+                    cost_usd=getattr(self, "cost", None))
 
 
 class JudgeTest(unittest.TestCase):
+    def test_judge_records_its_own_cost(self):
+        reply = '{"resolution": "resolved", "resolution_evidence": "", "frustration": 0, "frustration_evidence": ""}'
+        j = FakeJudge(reply)
+        j.cost = 0.0012
+        self.assertEqual(judge(EVENTS, j)["cost_usd"], 0.0012)
+        bad = FakeJudge("not json")
+        bad.cost = 0.0003
+        self.assertEqual(judge(EVENTS, bad)["cost_usd"], 0.0003)  # a bad reply was still paid for
+
     def test_valid_reply_and_evidence_check(self):
         reply = '```json\n{"resolution": "handed_off", "resolution_evidence": "Seu protocolo é EM-2", "frustration": 1, "frustration_evidence": "frase inventada"}\n```'
         j = FakeJudge(reply)

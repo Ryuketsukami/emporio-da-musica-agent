@@ -29,8 +29,18 @@ def load_sessions(dirs: list[Path]) -> list[dict]:
             header = next((e for e in events if e.get("kind") == "header"), None)
             if header is None:
                 continue
-            sessions.append({"path": path, "header": header, "labels": latest_labels(events)})
+            sessions.append({"path": path, "header": header, "labels": latest_labels(events), "spend": spend(events)})
     return sessions
+
+
+def spend(events: list[dict]) -> dict:
+    """What Duda's model calls cost in one session (the judge's cost is on its label). `cost_usd` is None
+    when a call had no price or the log predates cost tracking."""
+    answers = [e for e in events if e.get("kind") in ("reply", "fallback", "error")]
+    costs = [e.get("cost_usd") for e in answers]
+    known = bool(costs) and all(isinstance(c, (int, float)) for c in costs)
+    return {"cost_usd": sum(costs) if known else None,
+            "messages": sum(1 for e in events if e.get("kind") == "customer")}
 
 
 def _version_key(header: dict) -> tuple:
@@ -75,6 +85,9 @@ def summarize(sessions: list[dict], include_all: bool = False) -> dict:
         guard_hits = sum(1 for s in labelled if s["labels"]["signals"]["guard_hits"] >= 1)
         tech_errors = sum(1 for s in labelled if s["labels"]["signals"]["tech_errors"] >= 1)
         handoff_tickets = sum(s["labels"]["signals"]["tickets"]["human"] for s in labelled)
+        priced = [s["spend"] for s in group if s["spend"]["cost_usd"] is not None and s["spend"]["messages"]]
+        priced_cost = sum(p["cost_usd"] for p in priced)
+        priced_messages = sum(p["messages"] for p in priced)
 
         result_groups.append({
             "version": dict(zip(GROUP_FIELDS, key)),
@@ -87,6 +100,9 @@ def summarize(sessions: list[dict], include_all: bool = False) -> dict:
             "guard_hit_rate": _rate(guard_hits, len(labelled)),
             "tech_error_rate": _rate(tech_errors, len(labelled)),
             "handoff_tickets": handoff_tickets,
+            "priced_sessions": len(priced),
+            "cost_per_session": round(priced_cost / len(priced), 6) if priced else None,
+            "cost_per_message": round(priced_cost / priced_messages, 6) if priced else None,
         })
 
     return {
@@ -103,7 +119,8 @@ def _print_table(summary: dict) -> None:
             f"{version}  sessions={group['sessions']} labelled={group['labelled']} judged={group['judged']} "
             f"resolved={group['resolution']['resolved']} frustrated_rate={group['frustrated_rate']} "
             f"fallback_rate={group['fallback_rate']} guard_hit_rate={group['guard_hit_rate']} "
-            f"tech_error_rate={group['tech_error_rate']} handoff_tickets={group['handoff_tickets']}"
+            f"tech_error_rate={group['tech_error_rate']} handoff_tickets={group['handoff_tickets']} "
+            f"cost_per_session={group['cost_per_session']} cost_per_message={group['cost_per_message']}"
         )
 
 

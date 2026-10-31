@@ -2,6 +2,7 @@
 calls and reply content, independent of any model's self-report."""
 
 import argparse
+import dataclasses
 import json
 from datetime import datetime
 from pathlib import Path
@@ -113,6 +114,27 @@ def run_case(case: dict, backend, events_dir: Path | None = None,
     return replies, called, session
 
 
+def build_record(case: dict, name: str, failures: list[str], replies: list[str], called: list[str],
+                 session: Session) -> dict:
+    return {
+        "id": case["id"], "file": name, "ok": not failures, "failures": failures,
+        "replies": replies, "called": called, "messages": len(case["messages"]),
+        "cost_usd": None if session.cost_usd is None else round(session.cost_usd, 6),
+        "tokens": dataclasses.asdict(session.usage),
+    }
+
+
+def cost_line(records: list[dict]) -> str:
+    unpriced = sum(1 for r in records if r["cost_usd"] is None)
+    if unpriced:
+        return f"custo: desconhecido ({unpriced} caso{'s' if unpriced > 1 else ''} sem preço)"
+    total = sum(r["cost_usd"] for r in records)
+    messages = sum(r["messages"] for r in records)
+    if not messages:
+        return f"custo: US$ {total:.4f}"
+    return f"custo: US$ {total:.4f} em {messages} mensagens (US$ {total / messages:.4f} por mensagem)"
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m evals.run_evals")
     parser.add_argument("--file", choices=["cases", "edge", "all"], default="all")
@@ -144,16 +166,15 @@ def main(argv: list[str] | None = None, backend=None) -> int:
     transcripts_dir = out_dir / timestamp
 
     passed = 0
+    records: list[dict] = []
     with out_path.open("w", encoding="utf-8") as f:
         for name, case in selected:
             replies, called, session = run_case(case, backend, events_dir=transcripts_dir,
                                                 prompt_flags=settings.prompt_flags)
             failures = evaluate(case, replies, called)
             save_transcript(session, case["id"], transcripts_dir / f"{case['id']}.md")
-            record = {
-                "id": case["id"], "file": name, "ok": not failures, "failures": failures,
-                "replies": replies, "called": called,
-            }
+            record = build_record(case, name, failures, replies, called, session)
+            records.append(record)
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             status = "OK" if not failures else "FAIL"
             detail = f": {'; '.join(failures)}" if failures else ""
@@ -163,6 +184,8 @@ def main(argv: list[str] | None = None, backend=None) -> int:
 
     total = len(selected)
     print(f"total: {passed}/{total}")
+    if records:
+        print(cost_line(records))
     return 0 if passed == total else 1
 
 

@@ -1,6 +1,28 @@
 # Eval results
 
-## Prompt flags on vs off (2026-10-31, current code)
+## Four prompt flags on vs off, with cost (2026-10-31, current code)
+
+`claude-sonnet-5`, 3 full runs per setting, 27 cases (35 customer messages) each. The fourth flag,
+`register_complaints_directly`, targets the `c11` miss below. Cost is at list prices from `config/pricing.toml`.
+
+| Setting | Run 1 | Run 2 | Run 3 | Total | Misses | Cost per run | Cost per message |
+|---|---|---|---|---|---|---|---|
+| all four flags on (default) | 27/27 | 26/27 | 27/27 | 80/81 | `e14` once | US$ 0.24 | US$ 0.0069 |
+| all flags off | 26/27 | 26/27 | 26/27 | 78/81 | `e13` twice, `e11` once | US$ 0.25 | US$ 0.0072 |
+
+- **`c11` passed all 6 runs.** It failed 1 of the 6 runs before this flag (in the flags-on setting), so one
+  miss in 12 runs overall: the flag's effect is not proven, only that it does no harm.
+- **`e14` miss (flags on).** After two wrong e-mails, Duda offered a human. On the third wrong e-mail she opened a
+  ticket instead of calling `get_order`, so only 2 misses counted. The fourth message had the correct e-mail, which
+  was the third counted lookup, so `get_order` returned the order. No data leaked: the customer proved the contact
+  on file. But the case expects the lockout, so it fails. Duda also said "that was the last attempt" when 1 was left.
+- **`e02` grader fix.** In 2 flags-off runs Duda said the guitar "saiu de linha" (went out of production), which is
+  correct. The case accepted only "fora de linha", "não faz mais parte" or "descontinuado", so "saiu de linha" was
+  added. The totals above are rescored with it; the raw flags-off total was 76/81.
+- **Cost.** Each run cost about US$ 0.24 to 0.26; 90% to 92% of input tokens were cache reads of the system prompt and
+  tools. The flags add prompt tokens, but those are cached, and the flags-on runs were slightly cheaper.
+
+## Three prompt flags on vs off (2026-10-31, before the fourth flag)
 
 `claude-sonnet-5`, 3 full runs per setting, 27 cases each. Both settings have the shipping check on
 (a shipping question about a product must be answered from `quote`). `e13` gives the subject in a
@@ -8,7 +30,7 @@ second message.
 
 | Setting | Run 1 | Run 2 | Run 3 | Total | Misses |
 |---|---|---|---|---|---|
-| all three flags on (default) | 27/27 | 27/27 | 26/27 | 80/81 | `c11`: explained warranty windows, no complaint ticket |
+| all three flags on | 27/27 | 27/27 | 26/27 | 80/81 | `c11`: explained warranty windows, no complaint ticket |
 | all flags off | 27/27 | 26/27 | 27/27 | 80/81 | `e13`: asked more questions, no ticket |
 
 An earlier batch (3 runs per setting) had a first version of the shipping check that fired on any

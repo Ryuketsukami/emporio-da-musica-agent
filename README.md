@@ -47,7 +47,7 @@ For clean dev runs, create a token with `claude setup-token` and export it as `C
 | `LLM_JUDGE` | `false` | `true` labels every CLI session with the LLM judge, like `--judge`. |
 | `LLM_JUDGE_MODEL` | `claude-haiku-4-5` | Judge model for the SDK backend. |
 | `LLM_DEV_JUDGE_MODEL` | `haiku` | Judge model for the CLI backend. |
-| `LLM_PROMPT_FLAGS` | all three | Comma-separated prompt rules from `config/prompt_flags.toml`. Empty turns them all off. |
+| `LLM_PROMPT_FLAGS` | all four | Comma-separated prompt rules from `config/prompt_flags.toml`. Empty turns them all off. |
 
 Environment variables with the same names override `.env`.
 
@@ -84,7 +84,8 @@ Eleven behaviours. Everything that touches money, orders or the final reply is e
 - **Complaints and handoff tickets.** `register_ticket` writes a protocol (`EM-YYYYMMDD-NNNN`) to `_runtime/tickets.jsonl` and promises a reply in 24 business hours.
 - **Out-of-hours awareness.** Every customer turn starts with the store time and whether the store is open. When closed, Duda gives the reopening time.
 - **Reply guard.** Every money amount ("R$ 1.500" or "1.500 reais"), phone number, e-mail, link and bare domain in a reply must appear in a tool result, the manual, the system prompt or the customer's own messages. When the customer asks about shipping for a product, the shipping value must come from `quote`. A failed or empty reply gets one retry, then a safe fallback and a human ticket.
-- **Prompt flags.** Behaviour rules that can be switched on and off (`config/prompt_flags.toml`, `LLM_PROMPT_FLAGS`): call a tool instead of offering to, let `quote` do all the math, and hand off to a human after at most one question. All three are on by default.
+- **Prompt flags.** Behaviour rules that can be switched on and off (`config/prompt_flags.toml`, `LLM_PROMPT_FLAGS`): call a tool instead of offering to, let `quote` do all the math, hand off to a human after at most one question, and open a complaint ticket in the same reply when the customer asks for one. All four are on by default.
+- **Cost per message.** Each SDK model call is priced from `config/pricing.toml`. The session log, the eval results and the report show what each message cost in US dollars.
 - **Masked transcripts.** Every session is saved with its tool calls. E-mails and customer phones are masked (`l***@jmail.com`, `(67) 9****-3456`).
 
 ## How it works
@@ -135,6 +136,7 @@ history, guard and transcript code that production runs.
 | `src/tools.py` | the 8 tools: schemas, input checks, session limits |
 | `src/prompt.py` | system prompt and the per-turn time line |
 | `src/llm.py` | `Turn` type, SDK backend, CLI backend |
+| `src/pricing.py` | US-dollar cost of a model call |
 | `src/guard.py` | reply guard |
 | `src/session.py` | session state, masking, transcripts, tickets |
 | `src/agent.py` | the loop |
@@ -237,12 +239,12 @@ one log per case to `_runtime/evals/`. Each event is one JSON line, written and 
 |---|---|
 | `header` | the version fields below, the source (`chat`, `script`, `example`, `eval`) and the `--now` override |
 | `customer` | one customer message |
-| `model_call` | the blocks the model returned, the model id the API reports (null on the CLI backend), token usage, latency |
+| `model_call` | the blocks the model returned, the model id the API reports (null on the CLI backend), token usage, cost, latency |
 | `tool` | the tool name, its input and the full result |
 | `guard` | a rejected or empty reply and the reasons |
-| `fallback` | the safe fallback text and its reason (`guard` or `tool_cap`) |
-| `error` | the exception class of a failed model call |
-| `reply` | the reply the customer saw |
+| `fallback` | the safe fallback text and its reason (`guard` or `tool_cap`), plus the message's tokens and cost |
+| `error` | the exception class of a failed model call, plus the tokens and cost spent before it |
+| `reply` | the reply the customer saw, plus the tokens and cost of all model calls for that message |
 | `end` | the end of the session |
 | `labels` | outcome labels, added after the session |
 
@@ -258,6 +260,14 @@ replay can show one value where the customer typed several. Store and partner co
 and hashes of the system prompt, the tool definitions and `data/`. The commit alone is not enough: a dirty run
 can carry a different prompt or data under the same commit, and the hashes tell those runs apart. The report groups sessions by all of them.
 
+**Cost.** The SDK backend prices each call from `config/pricing.toml`: Anthropic list prices per million
+tokens for input, output, cache writes and cache reads, per model. A dated model id uses its base entry.
+The reply, fallback or error event of each customer message carries the summed tokens and `cost_usd` of all its
+model calls, including tool rounds and a guard retry. A call to a model that is not in the table makes the cost
+`null`, never a guess. The dev CLI backend has no cost: it runs on the subscription. The judge records its own
+cost on its label, apart from Duda's. Each eval result line has the case's `cost_usd` and `tokens`, and the run
+ends with the total and the cost per message.
+
 **Labels.** At the end of a session, code appends a `labels` event with the rubric version.
 
 - Code signals, always: turns, tickets, guard hits, fallbacks, the tool-round cap, order misses and lockout, technical errors, and a repeated customer message.
@@ -267,7 +277,7 @@ can carry a different prompt or data under the same commit, and the hashes tell 
 In the live check, two sessions on each backend, the judge labelled all 4 sessions and code found every quote in the chat.
 
 **Report.** `python -m scripts.report` reads the logs in `_runtime/sessions/` (`--dir` picks another folder) and prints rates per version group (commit and dirty flag, prompt, tools and data hashes, model):
-resolution, frustration, fallback, guard hit and technical error, plus the number of handoff tickets. It writes the same
+resolution, frustration, fallback, guard hit and technical error, plus the number of handoff tickets and the cost per session and per message. Sessions with an unknown cost, or logged before cost tracking, are left out of the cost. It writes the same
 numbers to `_runtime/summary.json`. It counts `chat` sessions only, because script, example and eval runs are not real
 customers. `--all` counts them too. It rebuilds the numbers from the logs on every run, so a late label shows on the
 next run. Only judge labels made with the current rubric count as judged. After a rubric change, `--label` judges the sessions again.
@@ -293,10 +303,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-194 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 80 of 81 case runs.
+217 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 80 of 81 case runs, at about US$ 0.007 per customer message.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 194 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 217 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -321,15 +331,16 @@ questions, out of hours, and a false price the customer quotes.
 Single runs are noisy, so the prompt flags were measured with 3 full SDK runs per setting
 (`claude-sonnet-5`, 27 cases each, with the shipping check on in both):
 
-| Prompt flags | Case runs passed | Misses |
-|---|---|---|
-| all three on (default) | 80/81 | `c11` once: explained the warranty windows but did not open the complaint ticket |
-| all off | 80/81 | `e13` once: asked more questions before opening the ticket |
+| Prompt flags | Case runs passed | Misses | Cost per message |
+|---|---|---|---|
+| all four on (default) | 80/81 | `e14` once: opened a ticket instead of a third lookup, so the lockout never came | US$ 0.0069 |
+| all off | 78/81 | `e13` twice: asked more questions before opening the ticket; `e11` once: offered to look up a partner store | US$ 0.0072 |
 
-The totals tie. The cases the flags target do better with them on. Counting an earlier batch of 3 runs
-per setting as well, `e13` failed 3 of 6 runs without the flags and 0 of 6 with them, and `e11` failed
-1 of 6 versus 0 of 6. That earlier batch is not in the totals, because a first version of the shipping
-check broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
+In the `e14` miss no data leaked: the customer's fourth message had the correct e-mail, and it was only the third
+counted lookup. `c11`, which the fourth flag targets, passed all 6 runs; it had failed once in the 6 runs before
+the flag, so the flag's effect is not proven. Across all three batches of 3 runs per setting, `e13` failed
+5 of 9 runs without the flags and 0 of 9 with them, and `e11` failed 2 of 9 versus 0 of 9. The first batch is
+not in any total, because a first version of the shipping check broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
 the shipping check was in. `e13` now gives the subject in a second message: the manual's flow (§7.2) is to
 ask what the customer needs first.
 Details per case: [`evals/RESULTS.md`](evals/RESULTS.md).

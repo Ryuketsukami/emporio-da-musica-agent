@@ -11,7 +11,8 @@ from src.config import TICKETS_PATH
 from src.data import Store
 from src.eventlog import EventLog
 from src.guard import check, shipping_without_quote
-from src.llm import Turn
+from src.llm import Turn, Usage
+from src.pricing import add_cost, add_usage
 from src.prompt import system_prompt, user_turn
 from src.session import Session, TicketLimitError, append_ticket
 from src.tools import TOOLS, ToolContext, run_tool
@@ -81,7 +82,13 @@ class Agent:
             blocks.append({"type": "tool_result", "tool_use_id": call.id, "content": dumped})
         session.messages.append({"role": "user", "content": blocks})
 
-    def _fallback(self, problems: list[str], reason: str) -> str:
+    def _spend(self, usage: Usage, cost: float | None) -> dict:
+        """The spend fields for a reply, fallback or error event; empty without a log."""
+        if self.events is None:
+            return {}
+        return {"usage": dataclasses.asdict(usage), "cost_usd": None if cost is None else round(cost, 6)}
+
+    def _fallback(self, problems: list[str], reason: str, spend: dict) -> str:
         session = self.session
         try:
             record = append_ticket(session, "human", f"Resposta bloqueada: {problems or 'limite de consultas'}",
@@ -95,7 +102,7 @@ class Agent:
         else:
             session.messages.append({"role": "assistant", "content": [{"type": "text", "text": fallback}]})
         session.note("duda", fallback)
-        self._emit("fallback", reason=reason, problems=problems, text=fallback)
+        self._emit("fallback", reason=reason, problems=problems, text=fallback, **spend)
         return fallback
 
     def reply(self, text: str) -> str:
@@ -111,6 +118,7 @@ class Agent:
         problems: list[str] = []
         fallback_reason = "guard"
         tools_this_turn: set[str] = set()
+        usage, cost = Usage(), 0.0
 
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             try:
@@ -120,12 +128,14 @@ class Agent:
             except Exception as exc:
                 del session.messages[start_len:]
                 session.note("verificacao", type(exc).__name__)
-                self._emit("error", error=type(exc).__name__)
+                self._emit("error", error=type(exc).__name__, **self._spend(usage, cost))
                 return TECH_ERROR_TEXT
 
+            usage, cost = add_usage(usage, turn.usage), add_cost(cost, turn.cost_usd)
+            session.usage, session.cost_usd = add_usage(session.usage, turn.usage), add_cost(session.cost_usd, turn.cost_usd)
             if self.events is not None:
                 self._emit("model_call", round=round_no, content=turn.content, model=turn.model,
-                           usage=dataclasses.asdict(turn.usage), latency_ms=latency_ms)
+                           usage=dataclasses.asdict(turn.usage), cost_usd=turn.cost_usd, latency_ms=latency_ms)
 
             if turn.tool_calls:
                 if round_no == MAX_TOOL_ROUNDS:
@@ -153,7 +163,7 @@ class Agent:
                     for idx in sorted(rejected_indices, reverse=True):
                         del session.messages[idx]
                     session.note("duda", reply_text)
-                    self._emit("reply", text=reply_text)
+                    self._emit("reply", text=reply_text, **self._spend(usage, cost))
                     return reply_text
                 problems = verdict.problems + ([shipping] if shipping else [])
                 rejected_indices.append(len(session.messages) - 1)
@@ -176,4 +186,4 @@ class Agent:
         for idx in sorted(rejected_indices, reverse=True):
             del session.messages[idx]
 
-        return self._fallback(problems, fallback_reason)
+        return self._fallback(problems, fallback_reason, self._spend(usage, cost))
