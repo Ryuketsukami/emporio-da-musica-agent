@@ -286,10 +286,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-175 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+176 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 175 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 176 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -362,7 +362,6 @@ The largest gap: code cannot catch a false statement that has no number in it.
 - **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth. The judge sees only the messages, not the tool results or the store clock. In one live dev run it marked as resolved a reply that wrongly said the return window had closed.
 - **Session logs grow without rotation.** Each session adds a file to `_runtime/sessions/`, and nothing deletes old ones.
 - **Session logs keep the customer's first name.** `get_order` returns it, and the log stores tool results in full.
-- **The `.md` masking misses some phone formats**, such as `(67) 9 9812-3456`. The session log replaces them.
 - **Dev runs can ignore `--now`.** The `claude` CLI tells the model the machine's real date, so a dev reply can contradict the `--now` clock. SDK runs follow it.
 - **Out of scope:** WhatsApp integration, a web UI, replies in other languages.
 

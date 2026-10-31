@@ -30,6 +30,14 @@ class MaskTest(unittest.TestCase):
         self.assertEqual(mask("fone +5567999998888."), "fone +556******8888.")
         self.assertEqual(mask("CEP 79202333, ano 2024-2025"), "CEP 79202333, ano 2024-2025")
 
+    def test_loose_phone_forms_are_masked(self):
+        cases = {"(67) 9 9812-3456": "(67) 9 ****-3456", "9 9812-3456": "9 98**-3456", "998123456": "998**3456"}
+        for raw, masked in cases.items():
+            self.assertEqual(mask(f"fone {raw}."), f"fone {masked}.", raw)
+        self.assertEqual(mask("fone (67) 99812-3456 ou (67) 9 9812-3456"), "fone (67) 9****-3456 ou (67) 9 ****-3456")
+        self.assertEqual(mask("loja 67 3341 4444.", keep_phones=frozenset({"33414444"})), "loja 67 3341 4444.")
+        self.assertEqual(mask("CEP 79202-333. Anos 2024-2025."), "CEP 79202-333. Anos 2024-2025.")
+
     def test_clean_text(self):
         self.assertEqual(clean_text("a\x00b\x1b[31mc\n d", 500), "ab[31mc\n d")
         self.assertEqual(len(clean_text("x" * 600, MAX_SUMMARY)), 500)

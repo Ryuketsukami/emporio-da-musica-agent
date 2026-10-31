@@ -21,6 +21,13 @@ PHONE_RE = re.compile(
     r"|(?:9\d{4}|[2-5]\d{3})-\d{4})"
     r"(?!\w)(?![.,/-]\d)"
 )
+# Any other 8-13 digit run with spaces, dots, hyphens or parentheses between the digits, such as
+# "(67) 9 9812-3456" or "998123456", which PHONE_RE leaves alone. A neighbouring letter, "/", "," or a
+# leading "-"/"." means a date, price, protocol or code; a year range or a CEP ("79202-333") is not a phone.
+LOOSE_PHONE_RE = re.compile(
+    r"(?<![\w/,.-])(?!(?:19|20)\d{2}-(?:19|20)\d{2}\b)(?!\d{5}-\d{3}(?!\d))"
+    r"\(?\d[\d .()-]*\d(?![\w/,])"
+)
 
 MAX_TICKETS = 3
 MAX_SUMMARY = 500
@@ -63,7 +70,15 @@ def mask(text: str, keep_phones: frozenset = frozenset()) -> str:
             return matched
         return mask_phone(matched)
 
-    return PHONE_RE.sub(_phone_sub, text)
+    def _loose_sub(m: re.Match) -> str:
+        matched = m.group()
+        if not 8 <= sum(c.isdigit() for c in matched) <= 13:
+            return matched
+        return _phone_sub(m)
+
+    # PHONE_RE first: its masked output ("9****-3456") no longer has a long digit run, so nothing is masked twice.
+    text = PHONE_RE.sub(_phone_sub, text)
+    return LOOSE_PHONE_RE.sub(_loose_sub, text)
 
 
 def clean_text(text: str, limit: int) -> str:

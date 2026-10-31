@@ -10,16 +10,11 @@ the life of the session, and is never persisted.
 """
 
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.session import EMAIL_RE, PHONE_RE
+from src.session import EMAIL_RE, LOOSE_PHONE_RE, PHONE_RE
 
-# Any 8-13 digit run with spaces, dots, hyphens or parentheses between the digits, such as "(67) 9 9812-3456"
-# or "998123456", which PHONE_RE (built for masking replies) does not catch. A neighbouring letter, "/", ","
-# or a leading "-"/"." means a date, price, protocol or code, not a phone.
-LOOSE_PHONE_RE = re.compile(r"(?<![\w/,.-])\(?\d[\d .()-]*\d(?![\w/,])")
 CONTACT_KEY = "email_or_phone"
 
 
