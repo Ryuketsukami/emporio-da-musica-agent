@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from src.data import load_store
-from src.eventlog import EventLog, Pseudonymizer, public_contacts, read_events
+from src.eventlog import EventLog, Pseudonymizer, append_event, public_contacts, read_events
 from src.policies import load_policies
 
 
@@ -45,3 +45,14 @@ class EventLogTest(unittest.TestCase):
         self.assertRegex(events[0]["t"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
         self.assertNotIn("lucas", path.read_text(encoding="utf-8"))
         self.assertEqual(json.loads(path.read_text(encoding="utf-8").splitlines()[1])["kind"], "tool")
+
+
+class AppendEventTest(unittest.TestCase):
+    def test_writes_line_with_t_and_kind(self):
+        path = Path(tempfile.mkdtemp()) / "s" / "x.jsonl"
+        append_event(path, "labels", {"rubric_version": "1"})
+        events = read_events(path)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["kind"], "labels")
+        self.assertEqual(events[0]["rubric_version"], "1")
+        self.assertRegex(events[0]["t"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")

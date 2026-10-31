@@ -6,12 +6,10 @@ chat against a versioned rubric and never raises — a bad or missing reply just
 into one `labels` event, appended to the session's own JSONL file.
 """
 
-import json
-from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from src.eventlog import read_events
+from src.eventlog import append_event, read_events
 from src.llm import extract_json
 
 RUBRIC_VERSION = "1"
@@ -128,9 +126,7 @@ def label_session(path: Path, judge_backend=None, judge_model: str | None = None
         "judge": judge(events, judge_backend) if judge_backend is not None else None,
         "judge_model": judge_model,
     }
-    record = {"t": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": "labels", **label}
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    append_event(path, "labels", label)
     return label
 
 

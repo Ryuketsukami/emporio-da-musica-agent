@@ -70,6 +70,14 @@ class Pseudonymizer:
         return obj
 
 
+def append_event(path: Path, kind: str, fields: dict) -> None:
+    """Appends one JSONL event line, flushed immediately: `{"t": ..., "kind": kind, **fields}`."""
+    record = {"t": datetime.now(timezone.utc).isoformat(timespec="seconds"), "kind": kind, **fields}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 class EventLog:
     """Appends one scrubbed JSONL event per call, flushed immediately."""
 
@@ -78,14 +86,7 @@ class EventLog:
         self.pseudo = pseudo
 
     def write(self, kind: str, **fields) -> None:
-        record = {
-            "t": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "kind": kind,
-            **self.pseudo.scrub_obj(fields),
-        }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        append_event(self.path, kind, self.pseudo.scrub_obj(fields))
 
 
 def public_contacts(policies: dict[str, str], store) -> tuple[frozenset[str], frozenset[str]]:
