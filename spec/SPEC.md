@@ -261,7 +261,8 @@ System prompt (static, cached), in Portuguese, built in `src/prompt.py` from blo
 Per turn, prepended to the customer message (outside the cached block):
 `[agora: sex 31/10/2026 09:15, horário de Campo Grande (UTC−4) — loja aberta | fecha às 18:00]`
 or `— loja fechada | reabre seg 03/11 às 09:00`. Outside hours the agent still answers everything;
-when something needs a person, it states the reopening time. Holidays are not modelled (L4).
+when something needs a person, it states the reopening time. Holidays are not modelled (L4). The prompt makes
+this line the only clock: the model must ignore any other date it knows (the dev CLI injects the machine's date).
 
 ## 8. Security: assume the model is hostile
 
