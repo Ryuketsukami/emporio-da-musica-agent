@@ -1,6 +1,9 @@
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from src import cli
 from src.agent import FALLBACK_NO_TICKET, MAX_TOOL_ROUNDS, TECH_ERROR_TEXT, Agent
@@ -201,17 +204,80 @@ class EventEmissionTest(unittest.TestCase):
         self.assertEqual(a.reply("oi"), "Oi!")
 
 
+class FakeJudge:
+    def __init__(self, reply):
+        self.reply, self.calls = reply, []
+
+    def call(self, system, messages, tools):
+        self.calls.append((system, messages, tools))
+        if isinstance(self.reply, Exception):
+            raise self.reply
+        return Turn(self.reply, [], Usage(), [{"type": "text", "text": self.reply}])
+
+
 class CliTest(unittest.TestCase):
     def test_script_run_writes_masked_transcript(self):
         d = Path(tempfile.mkdtemp())
         script = d / "s.txt"
         script.write_text("# Consulta de pedido\nmeu email é lucas.mendes@jmail.com\n", encoding="utf-8")
         out = d / "out.md"
-        code = cli.main(["--script", str(script), "--now", "2026-11-02T10:00", "--out", str(out)],
-                        backend=FakeBackend(text("Obrigada!")))
+        sessions_dir = Path(tempfile.mkdtemp())
+        with mock.patch.object(cli, "SESSIONS_DIR", sessions_dir):
+            code = cli.main(["--script", str(script), "--now", "2026-11-02T10:00", "--out", str(out)],
+                            backend=FakeBackend(text("Obrigada!")))
         md = out.read_text(encoding="utf-8")
         self.assertEqual(code, 0)
         self.assertTrue(md.startswith("# Consulta de pedido"))
         self.assertIn("**Cliente:** meu email é l***@jmail.com", md)
         self.assertIn("**Duda:** Obrigada!", md)
         self.assertIn("_Gerado por python -m src.cli em 02/11/2026 10:00, horário de Campo Grande (UTC−4) · backend fake_", md)
+
+        jsonl_files = list(sessions_dir.glob("*.jsonl"))
+        self.assertEqual(len(jsonl_files), 1)
+        events = read_events(jsonl_files[0])
+        self.assertEqual(events[0]["kind"], "header")
+        self.assertEqual(events[0]["source"], "script")
+        self.assertEqual(events[-1]["kind"], "labels")
+        self.assertIsNone(events[-1]["judge"])
+        content = jsonl_files[0].read_text(encoding="utf-8")
+        self.assertNotIn("lucas.mendes", content)
+        self.assertIn("<EMAIL_1>", content)
+
+    def test_judge_flag_uses_judge_backend(self):
+        d = Path(tempfile.mkdtemp())
+        script = d / "s.txt"
+        script.write_text("oi\n", encoding="utf-8")
+        sessions_dir = Path(tempfile.mkdtemp())
+        reply = ('{"resolution": "resolved", "resolution_evidence": "", "frustration": 0, '
+                 '"frustration_evidence": ""}')
+        with mock.patch.object(cli, "SESSIONS_DIR", sessions_dir):
+            code = cli.main(["--script", str(script), "--now", "2026-11-02T10:00", "--judge"],
+                            backend=FakeBackend(text("Obrigada!")), judge_backend=FakeJudge(reply))
+        self.assertEqual(code, 0)
+        jsonl_path = next(sessions_dir.glob("*.jsonl"))
+        events = read_events(jsonl_path)
+        self.assertEqual(events[-1]["judge"]["resolution"], "resolved")
+
+    def test_label_failure_does_not_break_chat(self):
+        d = Path(tempfile.mkdtemp())
+        script = d / "s.txt"
+        script.write_text("oi\n", encoding="utf-8")
+
+        sessions_dir = Path(tempfile.mkdtemp())
+        with mock.patch.object(cli, "SESSIONS_DIR", sessions_dir):
+            code = cli.main(["--script", str(script), "--now", "2026-11-02T10:00", "--judge"],
+                            backend=FakeBackend(text("Obrigada!")), judge_backend=FakeJudge(RuntimeError("boom")))
+        self.assertEqual(code, 0)
+        jsonl_path = next(sessions_dir.glob("*.jsonl"))
+        events = read_events(jsonl_path)
+        self.assertEqual(events[-1]["judge"], {"error": "RuntimeError: boom"})
+
+        sessions_dir2 = Path(tempfile.mkdtemp())
+        buf = io.StringIO()
+        with mock.patch.object(cli, "SESSIONS_DIR", sessions_dir2), \
+                mock.patch.object(cli, "label_session", side_effect=RuntimeError("boom")), \
+                contextlib.redirect_stdout(buf):
+            code2 = cli.main(["--script", str(script), "--now", "2026-11-02T10:00"],
+                             backend=FakeBackend(text("Obrigada!")))
+        self.assertEqual(code2, 0)
+        self.assertIn("aviso: rótulos não gerados", buf.getvalue())

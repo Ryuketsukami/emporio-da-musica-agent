@@ -1,12 +1,30 @@
+import tempfile
 import unittest
+from pathlib import Path
 
-from evals.run_evals import evaluate, load_cases, main
+from evals.run_evals import evaluate, load_cases, main, run_case
 from src.config import ROOT
+from src.eventlog import read_events
+from src.llm import Turn, Usage
 
 
 class _BoomBackend:
     def call(self, *args, **kwargs):
         raise AssertionError("backend should not be called")
+
+
+def text(t):
+    return Turn(t, [], Usage(), [{"type": "text", "text": t}])
+
+
+class FakeBackend:
+    label = "fake"
+
+    def __init__(self, *turns):
+        self.turns = list(turns)
+
+    def call(self, system, messages, tools):
+        return self.turns.pop(0)
 
 
 class EvaluateTest(unittest.TestCase):
@@ -34,6 +52,27 @@ class EvaluateTest(unittest.TestCase):
 class MainOnlyMissingIdTest(unittest.TestCase):
     def test_only_missing_id_is_an_error(self):
         self.assertNotEqual(main(["--only", "nao-existe"], backend=_BoomBackend()), 0)
+
+
+class RunCaseEventsTest(unittest.TestCase):
+    def test_writes_eval_session_log_with_header_and_labels(self):
+        case = {"id": "caso-1", "messages": ["oi"]}
+        events_dir = Path(tempfile.mkdtemp())
+        run_case(case, FakeBackend(text("Oi! Como posso ajudar?")), events_dir=events_dir)
+
+        path = events_dir / "caso-1.jsonl"
+        self.assertTrue(path.exists())
+        events = read_events(path)
+        self.assertEqual(events[0]["kind"], "header")
+        self.assertEqual(events[0]["source"], "eval")
+        self.assertEqual(events[-1]["kind"], "labels")
+        self.assertIsNone(events[-1]["judge"])
+
+    def test_without_events_dir_writes_nothing(self):
+        case = {"id": "caso-2", "messages": ["oi"]}
+        events_dir = Path(tempfile.mkdtemp())
+        run_case(case, FakeBackend(text("Oi! Como posso ajudar?")))
+        self.assertEqual(list(events_dir.iterdir()), [])
 
 
 if __name__ == "__main__":
