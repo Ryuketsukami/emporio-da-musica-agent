@@ -25,6 +25,31 @@ class PseudonymizerTest(unittest.TestCase):
         obj = {"input": {"email_or_phone": "lucas.mendes@jmail.com"}, "list": ["x@y.com", 3, None], "n": 4}
         self.assertEqual(p.scrub_obj(obj), {"input": {"email_or_phone": "<EMAIL_1>"}, "list": ["<EMAIL_2>", 3, None], "n": 4})
 
+    def test_loose_phone_formats_get_one_tag(self):
+        for raw in ["(67) 9 9812-3456", "67 9 9812-3456", "9 9812-3456", "998123456", "99812 3456", "067998123456"]:
+            p = Pseudonymizer()
+            self.assertEqual(p.scrub(f"meu fone: {raw}."), "meu fone: <PHONE_1>.", raw)
+        p = Pseudonymizer()
+        self.assertEqual(p.scrub("(67) 99812-3456 e (67) 9 9812-3456"), "<PHONE_1> e <PHONE_1>")
+
+    def test_loose_phone_keeps_public_numbers_and_non_phones(self):
+        p = Pseudonymizer(keep_phones=frozenset({"33414444"}))
+        for text in ["Liga 67 3341 4444", "Protocolo EM-20261031-0001", "sessão 20251226-100000-81be",
+                     "R$ 1.234.567,89", "entrega 22/12/2025", "agora 2025-12-26T10:00", "pedido 4, R$ 799,90",
+                     "código BRQM7890123BR"]:
+            self.assertEqual(p.scrub(text), text)
+
+    def test_email_or_phone_value_is_always_tagged(self):
+        p = Pseudonymizer(keep_phones=frozenset({"98123456"}))
+        obj = {"email_or_phone": "9 98123456"}
+        self.assertEqual(p.scrub_obj(obj), {"email_or_phone": "<PHONE_1>"})
+        self.assertEqual(p.scrub_obj({"email_or_phone": " Lucas.Mendes@jmail.com"}), {"email_or_phone": "<EMAIL_1>"})
+        self.assertEqual(p.scrub("lucas.mendes@jmail.com"), "<EMAIL_1>")
+        self.assertEqual(p.scrub_obj({"email_or_phone": "não lembro"}), {"email_or_phone": "<PHONE_2>"})
+
+    def test_scrub_obj_scrubs_keys(self):
+        self.assertEqual(Pseudonymizer().scrub_obj({"lucas.mendes@jmail.com": 1}), {"<EMAIL_1>": 1})
+
     def test_public_contacts_from_data(self):
         phones, emails = public_contacts(load_policies(), load_store())
         self.assertTrue({"33414444", "33214500", "33251180"} <= phones)

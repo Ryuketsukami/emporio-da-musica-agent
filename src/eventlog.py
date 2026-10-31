@@ -10,10 +10,21 @@ the life of the session, and is never persisted.
 """
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.session import EMAIL_RE, PHONE_RE
+
+# Any 8-13 digit run with spaces, dots, hyphens or parentheses between the digits, such as "(67) 9 9812-3456"
+# or "998123456", which PHONE_RE (built for masking replies) does not catch. A neighbouring letter, "/", ","
+# or a leading "-"/"." means a date, price, protocol or code, not a phone.
+LOOSE_PHONE_RE = re.compile(r"(?<![\w/,.-])\(?\d[\d .()-]*\d(?![\w/,])")
+CONTACT_KEY = "email_or_phone"
+
+
+def _last8(text: str) -> str:
+    return "".join(c for c in text if c.isdigit())[-8:]
 
 
 class Pseudonymizer:
@@ -51,16 +62,36 @@ class Pseudonymizer:
 
         def _phone_sub(m):
             matched = m.group()
-            digits = "".join(c for c in matched if c.isdigit())[-8:]
+            digits = _last8(matched)
             if digits in self.keep_phones:
                 return matched
             return self._phone_tag(digits)
 
-        return PHONE_RE.sub(_phone_sub, text)
+        text = PHONE_RE.sub(_phone_sub, text)
+
+        def _loose_sub(m):
+            matched = m.group()
+            digits = "".join(c for c in matched if c.isdigit())
+            if not 8 <= len(digits) <= 13 or digits[-8:] in self.keep_phones:
+                return matched
+            return self._phone_tag(digits[-8:])
+
+        return LOOSE_PHONE_RE.sub(_loose_sub, text)
+
+    def contact_tag(self, value: str) -> str:
+        """The tag for a value the model sent as a contact: always replaced, whatever its format."""
+        if "@" in value:
+            email = EMAIL_RE.search(value)
+            return self._email_tag(email.group() if email else value.strip())
+        return self._phone_tag(_last8(value))
 
     def scrub_obj(self, obj):
         if isinstance(obj, dict):
-            return {key: self.scrub_obj(value) for key, value in obj.items()}
+            return {
+                (self.scrub(key) if isinstance(key, str) else key):
+                    (self.contact_tag(value) if key == CONTACT_KEY and isinstance(value, str) else self.scrub_obj(value))
+                for key, value in obj.items()
+            }
         if isinstance(obj, list):
             return [self.scrub_obj(value) for value in obj]
         if isinstance(obj, tuple):
