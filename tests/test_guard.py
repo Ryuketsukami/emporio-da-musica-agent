@@ -22,6 +22,10 @@ class GuardTest(unittest.TestCase):
         self.assertTrue(check("Escreve para Contato@EmporioDaMusica.com.br", "contato@emporiodamusica.com.br").ok)
         self.assertEqual(check("veja https://evil.example/x.", "").problems, ["o link https://evil.example/x não veio de nenhuma consulta"])
 
+    def test_email_problem_text(self):
+        v = check("Escreve para fake@golpe.com", "")
+        self.assertEqual(v.problems, ["o e-mail fake@golpe.com não veio de nenhuma consulta"])
+
     def test_dates_codes_and_plain_text_pass(self):
         self.assertTrue(check("Previsão 29/12/2025, rastreio BRJL5544332BR, CEP 79202-333. Valeu!", "").ok)
 

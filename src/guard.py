@@ -59,7 +59,7 @@ def check(reply: str, allowed: str) -> Verdict:
         elif kind == "email":
             if m.group().lower() in allowed_emails:
                 continue
-            problem = f"o email {m.group()} não veio de nenhuma consulta"
+            problem = f"o e-mail {m.group()} não veio de nenhuma consulta"
         else:
             link = m.group().rstrip(".,;:!?")
             if link.lower() in allowed_lower:
