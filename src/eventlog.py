@@ -74,7 +74,10 @@ class Pseudonymizer:
         return LOOSE_PHONE_RE.sub(_loose_sub, text)
 
     def contact_tag(self, value: str) -> str:
-        """The tag for a value the model sent as a contact: always replaced, whatever its format."""
+        """The tag for a value the model sent as a contact: always replaced, whatever its format,
+        unless it has no digit and no "@" (empty, "não informado"), so it holds no contact data."""
+        if "@" not in value and not any(c.isdigit() for c in value):
+            return value
         if "@" in value:
             email = EMAIL_RE.search(value)
             return self._email_tag(email.group() if email else value.strip())

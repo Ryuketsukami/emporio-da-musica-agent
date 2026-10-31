@@ -45,7 +45,12 @@ class PseudonymizerTest(unittest.TestCase):
         self.assertEqual(p.scrub_obj(obj), {"email_or_phone": "<PHONE_1>"})
         self.assertEqual(p.scrub_obj({"email_or_phone": " Lucas.Mendes@jmail.com"}), {"email_or_phone": "<EMAIL_1>"})
         self.assertEqual(p.scrub("lucas.mendes@jmail.com"), "<EMAIL_1>")
-        self.assertEqual(p.scrub_obj({"email_or_phone": "não lembro"}), {"email_or_phone": "<PHONE_2>"})
+
+    def test_contact_free_value_stays(self):
+        p = Pseudonymizer()
+        self.assertEqual(p.scrub_obj({"email_or_phone": ""}), {"email_or_phone": ""})
+        self.assertEqual(p.scrub_obj({"email_or_phone": "não informado"}), {"email_or_phone": "não informado"})
+        self.assertEqual(p.scrub_obj({"email_or_phone": "(67) 9 9812-3456"}), {"email_or_phone": "<PHONE_1>"})
 
     def test_scrub_obj_scrubs_keys(self):
         self.assertEqual(Pseudonymizer().scrub_obj({"lucas.mendes@jmail.com": 1}), {"<EMAIL_1>": 1})
