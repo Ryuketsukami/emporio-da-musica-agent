@@ -215,8 +215,9 @@ class CliBackend:
             ToolCall(id=f"cli_{uuid4().hex[:12]}", name=tc["name"], input=tc["input"])
             for tc in data.get("tool_calls") or []
         ]
-        content = _content_from_tool_calls(tool_calls)
-        return Turn(text=data.get("text"), tool_calls=tool_calls, usage=usage, content=content)
+        text = data.get("text")
+        content = ([{"type": "text", "text": text}] if text else []) + _content_from_tool_calls(tool_calls)
+        return Turn(text=text, tool_calls=tool_calls, usage=usage, content=content)
 
 
 def make_backend(settings: Settings) -> SdkBackend | CliBackend:

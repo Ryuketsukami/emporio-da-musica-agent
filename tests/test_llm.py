@@ -71,6 +71,12 @@ class CliTest(unittest.TestCase):
         self.assertEqual(CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS).text, "Oi!")
         self.assertEqual(len(runner.calls), 2)
 
+    def test_text_reply_is_kept_in_content_and_history(self):
+        turn = CliBackend("sonnet", runner=FakeRunner('{"text": "Oi! Tudo bem?", "tool_calls": []}')).call("SYS", HISTORY, TOOLS)
+        self.assertEqual(turn.content, [{"type": "text", "text": "Oi! Tudo bem?"}])
+        history = HISTORY + [{"role": "assistant", "content": turn.content}, {"role": "user", "content": "E no PIX?"}]
+        self.assertIn("VOCÊ: Oi! Tudo bem?", render_conversation(history))
+
     def test_gives_up_after_two_bad_replies(self):
         with self.assertRaises(LLMError):
             CliBackend("sonnet", runner=FakeRunner("x", "y")).call("SYS", HISTORY, TOOLS)
