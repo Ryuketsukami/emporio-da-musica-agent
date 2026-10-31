@@ -289,10 +289,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-181 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+183 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 181 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 183 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```

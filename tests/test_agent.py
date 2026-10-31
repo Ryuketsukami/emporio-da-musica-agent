@@ -322,6 +322,19 @@ class CliTest(unittest.TestCase):
         self.assertIn("aviso: log da sessão desativado (OSError)", buf.getvalue())
         self.assertIn("**Duda:** Obrigada!", out.read_text(encoding="utf-8"))
 
+    def test_end_is_written_when_saving_the_transcript_fails(self):
+        d = Path(tempfile.mkdtemp())
+        script = d / "s.txt"
+        script.write_text("oi\n", encoding="utf-8")
+        sessions_dir = Path(tempfile.mkdtemp())
+        with mock.patch.object(cli, "SESSIONS_DIR", sessions_dir), \
+                mock.patch.object(cli, "save_transcript", side_effect=OSError("disk full")), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(OSError):
+                cli.main(["--script", str(script), "--now", "2026-11-02T10:00"], backend=FakeBackend(text("Obrigada!")))
+        events = read_events(next(sessions_dir.glob("*.jsonl")))
+        self.assertEqual(events[-1]["kind"], "end")
+
     def test_transcript_is_saved_before_labelling(self):
         d = Path(tempfile.mkdtemp())
         script = d / "s.txt"

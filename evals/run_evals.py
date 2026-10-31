@@ -102,7 +102,7 @@ def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[
     replies = [agent.reply(text) for text in case["messages"]]
     called = _called_tools(session)
 
-    if log is not None:
+    if log is not None and agent.events is not None:  # skip a log switched off mid-case
         try:
             log.write("end")
             label_session(log.path)

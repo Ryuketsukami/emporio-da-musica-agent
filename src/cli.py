@@ -95,7 +95,15 @@ def main(argv: list[str] | None = None, backend=None, judge_backend=None) -> int
     now = now_fn()
     note = f"Gerado por python -m src.cli em {now:%d/%m/%Y %H:%M}, {TZ_LABEL} · backend {backend.label}"
     out_path = args.out if args.out else SESSIONS_DIR / f"{session.id}.md"
-    saved = save_transcript(session, title, out_path, note, keep_phones)
+    try:
+        saved = save_transcript(session, title, out_path, note, keep_phones)
+    finally:  # the log records the end of the session even if the transcript cannot be saved
+        if agent.events is not None:
+            try:
+                log.write("end")
+            except Exception as exc:
+                print(f"aviso: log da sessão desativado ({type(exc).__name__})")
+                agent.events = None
 
     if agent.events is None:  # a failed write switched logging off
         print(saved)
@@ -105,7 +113,6 @@ def main(argv: list[str] | None = None, backend=None, judge_backend=None) -> int
     judge_on = args.judge or settings.judge
     judge_model = judge_model_name(settings)
     try:
-        log.write("end")
         judge = (judge_backend if judge_backend is not None else make_judge_backend(settings)) if judge_on else None
         label_session(log.path, judge, judge_model if judge_on else None)
     except Exception as exc:

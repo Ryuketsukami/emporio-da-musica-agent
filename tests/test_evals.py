@@ -1,3 +1,5 @@
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -75,6 +77,16 @@ class RunCaseEventsTest(unittest.TestCase):
         run_case({"id": "b", "messages": ["oi"], "now": "2025-12-26T10:00"}, FakeBackend(text("Oi!")), events_dir=events_dir)
         self.assertEqual(read_events(events_dir / "a.jsonl")[0]["now_override"], DEFAULT_NOW)
         self.assertEqual(read_events(events_dir / "b.jsonl")[0]["now_override"], "2025-12-26T10:00")
+
+    def test_log_switched_off_mid_case_gets_no_end_or_labels(self):
+        events_dir = Path(tempfile.mkdtemp())
+        with mock.patch("evals.run_evals.EventLog.write", side_effect=[None, OSError("disk full")]) as write, \
+                mock.patch("evals.run_evals.label_session") as label, \
+                contextlib.redirect_stdout(io.StringIO()):
+            replies, _, _ = run_case({"id": "c", "messages": ["oi"]}, FakeBackend(text("Oi!")), events_dir=events_dir)
+        self.assertEqual(replies, ["Oi!"])
+        self.assertEqual(write.call_count, 2)  # header, then the failed customer event; no `end`
+        label.assert_not_called()
 
     def test_without_events_dir_writes_nothing(self):
         case = {"id": "caso-2", "messages": ["oi"]}
