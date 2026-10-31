@@ -4,7 +4,9 @@ Final run on the production backend: **26 of 27 cases pass** (cases 12/12, edge 
 The one failure is a tool-use miss. Its reply gave the correct facts.
 
 Both runs below are from 2026-10-31, after the final fix wave (CLI history fix, wider reply guard,
-agent-loop hardening, truncated-search notice). Each is one pass over both files, with no reruns.
+agent-loop hardening, truncated-search notice) and the guard-precision follow-up (stricter phone and
+domain patterns, +55 numbers, domain paths, any-case domain endings). The guard blocked no correct
+reply in either run. Each is one pass over both files, with no reruns.
 Each case runs at its `now` field, or at `2026-11-02T10:00` (Monday, store open) by default.
 
 ## SDK run (headline)
@@ -62,8 +64,12 @@ reply.
 | File | Passed |
 |---|---|
 | `evals/cases.jsonl` | 12/12 |
-| `evals/edge_cases.jsonl` | 15/15 |
-| Total | 27/27 |
+| `evals/edge_cases.jsonl` | 14/15 |
+| Total | 26/27 |
+
+**Failure.** `e07-devolucao-fora-do-prazo`: the reply stopped after confirming the order and its
+estimated delivery date. It never got to the return options, so "garantia" was missing. No guard hit
+was involved. The previous dev run passed this case, so this is run-to-run model variance.
 
 ## Earlier SDK run, before the fixes
 

@@ -214,10 +214,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-117 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+121 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 117 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 121 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -241,10 +241,11 @@ questions, out of hours, and a false price the customer quotes.
 | Backend | `cases.jsonl` | `edge_cases.jsonl` |
 |---|---|---|
 | SDK, `claude-sonnet-5` (final run) | 12/12 | 14/15 |
-| Dev CLI, `sonnet` (final run, after the history fix) | 12/12 | 15/15 |
+| Dev CLI, `sonnet` (final run, after the history fix) | 12/12 | 14/15 |
 
 Both runs come after the final fixes. The one SDK failure is a tool-use miss: in `e13-fora-do-horario`
-the model gave the correct reopening time but asked for the subject before it opened the ticket. Dev
+the model gave the correct reopening time but asked for the subject before it opened the ticket. The
+one dev failure, `e07`, is a reply that stopped early; the previous dev run passed it. Dev
 runs before the history fix are not comparable: the dev model did not see its own earlier replies.
 Details per case: [`evals/RESULTS.md`](evals/RESULTS.md).
 
