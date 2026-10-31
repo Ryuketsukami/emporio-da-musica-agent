@@ -11,11 +11,12 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from src.config import DATA_DIR
+from src.money import apply_discount
 
 STOPWORDS = frozenset(
     "de da do das dos e o a os as um uma uns umas para pra com em no na nos nas ate por que "
-    "quero queria tem voces voce qual quais quanto custa custando preco valor opcao opcoe "
-    "disponivel me meu minha loja comprar algum alguma modelo r reai".split()
+    "quero queria tem voces voce qual quais quanto custa custando preco valor opcao "
+    "disponivel me meu minha loja comprar algum alguma modelo r real".split()
 )
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]")
@@ -109,10 +110,6 @@ def to_cents(text: str) -> int:
     return int((Decimal(text) * 100).to_integral_value(rounding=ROUND_HALF_UP))
 
 
-def _discount(cents: int, pct: int) -> int:
-    return int((Decimal(cents) * (100 - pct) / 100).to_integral_value(rounding=ROUND_HALF_UP))
-
-
 def _stem(token: str) -> str:
     if token.endswith("oes") or token.endswith("aes"):
         return token[:-3] + "ao"
@@ -154,7 +151,7 @@ def _token_match(q: str, t: str) -> bool:
 def effective_price(store: Store, product: Product) -> int:
     promo = store.active_promo(product.id)
     if promo is not None:
-        return _discount(product.price_cents, promo.pct)
+        return apply_discount(product.price_cents, promo.pct)
     return product.price_cents
 
 
