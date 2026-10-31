@@ -35,6 +35,12 @@ class SchemaTest(unittest.TestCase):
         self.assertEqual(run_tool("read_policy", {"section": "../../etc/passwd"}, c), {"erro": "Valor inválido para section"})
         self.assertEqual(run_tool("read_policy", {"section": "atendimento"}, c), {"erro": "Valor inválido para section"})
 
+    def test_non_dict_args_never_raises(self):
+        c = ctx()
+        for bad_args in (None, 5, True, []):
+            self.assertEqual(run_tool("get_product", bad_args, c), {"erro": "Parâmetros inválidos"})
+        self.assertEqual(run_tool("list_active_promotions", [], c), {"erro": "Parâmetros inválidos"})
+
 
 class CatalogToolsTest(unittest.TestCase):
     def test_search(self):

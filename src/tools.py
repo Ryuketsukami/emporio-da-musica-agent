@@ -417,11 +417,13 @@ def run_tool(name: str, args: dict, ctx: ToolContext) -> dict:
     entry = _HANDLERS.get(name)
     if entry is None:
         return {"erro": f"Ferramenta desconhecida: {name}"}
+    if not isinstance(args, dict):
+        return {"erro": "Parâmetros inválidos"}
     properties, required, handler = entry
-    error = _validate_args(args, properties, required)
-    if error is not None:
-        return {"erro": error}
     try:
+        error = _validate_args(args, properties, required)
+        if error is not None:
+            return {"erro": error}
         return handler(args, ctx)
     except Exception:
         return {"erro": "Erro interno ao processar a solicitação."}
