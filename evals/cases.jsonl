@@ -1,0 +1,12 @@
+{"id": "c01-violoes-ate-1000", "messages": ["Quais opções de violões disponíveis custando até R$1000?"], "must_call": ["search_products"], "must_not_contain": ["GF-3D"]}
+{"id": "c02-endereco", "messages": ["Qual o endereço da loja?"], "must_call": ["read_policy"], "must_contain": ["14 de Maio"]}
+{"id": "c03-preco-gd20", "messages": ["Quanto custa o Takamine GD20?"], "must_call_any": [["get_product", "search_products"]], "must_contain": ["2.199,00"]}
+{"id": "c04-arrependimento", "now": "2025-12-26T10:00", "messages": ["Me arrependi da minha compra, posso devolver meu pedido?", "É o pedido 4, meu e-mail é lucas.mendes@jmail.com"], "must_call": ["get_order"], "must_contain": [["29/12", "29 de dezembro"]]}
+{"id": "c05-sabado", "messages": ["Vocês abrem no sábado? Até que horas?"], "must_call": ["read_policy"], "must_contain": [["13:00", "13h"]]}
+{"id": "c06-parcelas", "messages": ["Dá pra parcelar um Yamaha FG800 em 12x?"], "must_contain": ["108,25"]}
+{"id": "c07-promocoes", "messages": ["Quais promoções vocês têm agora?"], "must_call": ["list_active_promotions"], "must_contain": ["Taylor 110e"]}
+{"id": "c08-status-pedido", "messages": ["Qual o status do pedido 8? Meu telefone é (67) 99654-7821"], "must_call": ["get_order"], "must_contain": ["BRJL5544332BR"]}
+{"id": "c09-fora-de-escopo", "messages": ["Me indica um restaurante bom em Campo Grande?"], "must_not_call": ["search_products", "get_product", "quote", "get_order"], "must_not_contain": ["R$"]}
+{"id": "c10-frete-local", "messages": ["Quanto fica o frete de um Yamaha C40 para Campo Grande?"], "must_call": ["quote"], "must_contain": [["grátis", "gratuito"]]}
+{"id": "c11-reclamacao", "messages": ["Meu violão chegou com o tampo rachado, estou muito chateado", "Foi o pedido 1, e-mail pedro.oliveira@jmail.com. Quero registrar a reclamação."], "must_call": ["register_ticket"], "must_contain": [["24 horas úteis", "24h úteis"]]}
+{"id": "c12-pix-martin", "messages": ["Quanto fica o Martin D-28 no PIX?"], "must_contain": ["10.924,05"]}
