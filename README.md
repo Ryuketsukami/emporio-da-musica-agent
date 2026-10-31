@@ -36,7 +36,7 @@ python -m src.cli                   # chat; type "sair" to quit
 No API key? Set `LLM_DEV=true` in `.env`. Each model call then goes through your local `claude` CLI
 and your Claude subscription. The CLI must be installed and logged in.
 On a normally logged-in machine, the `claude` CLI adds the account owner's e-mail to the model's context.
-For clean dev runs, create a token with `claude setup-token` and set `CLAUDE_CODE_OAUTH_TOKEN`, and the backend then runs the CLI with an empty home.
+For clean dev runs, create a token with `claude setup-token` and export it as `CLAUDE_CODE_OAUTH_TOKEN` in your shell (the app does not read it from `.env`). The backend then runs the CLI with an empty home.
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -63,7 +63,7 @@ an event log to `_runtime/sessions/<id>.jsonl` (see [Session logs and labels](#s
 
 ```bash
 python -m src.cli --judge                    # at the end, also label the session with the LLM judge
-python -m src.cli --script examples/scripts/05-cordas-loja-parceira.txt --source chat   # tag: chat, script or example
+python -m src.cli --script examples/scripts/05-cordas-loja-parceira.txt --source example   # tag: chat, script or example
 python -m scripts.report                     # outcome rates per version, chat sessions only
 python -m scripts.report --all --label       # all sessions; judge the unjudged ones first
 ```
@@ -242,14 +242,14 @@ one log per case to `_runtime/evals/`. Each event is one JSON line, written and 
 | `end` | the end of the session |
 | `labels` | outcome labels, added after the session |
 
-**Placeholders, not masking.** Customer e-mails and phones become `<EMAIL_1>`, `<PHONE_1>` and so on.
+**Placeholders, not masking.** Customer e-mails and phones, in any common format such as `(67) 9 9812-3456`, become `<EMAIL_1>`, `<PHONE_1>` and so on.
 The same value keeps the same tag for the whole session, and the value-to-tag mapping is never stored.
 The `.md` masking is not enough here: two different e-mails can mask to the same `l***@jmail.com`, so a
 replay can show one value where the customer typed several. Store and partner contacts stay readable.
 
 **Version header.** Each log starts with the git commit and a dirty flag, the backend and the configured model,
 and hashes of the system prompt, the tool definitions and `data/`. The commit alone is not enough: a dirty run
-can carry a different prompt or data under the same commit, and the hashes tell those runs apart.
+can carry a different prompt or data under the same commit, and the hashes tell those runs apart. The report groups sessions by all of them.
 
 **Labels.** At the end of a session, code appends a `labels` event with the rubric version.
 
@@ -259,11 +259,11 @@ can carry a different prompt or data under the same commit, and the hashes tell 
 
 In the live check, two sessions on each backend, the judge labelled all 4 sessions and code found every quote in the chat.
 
-**Report.** `python -m scripts.report` reads the logs in `_runtime/sessions/` (`--dir` picks another folder) and prints rates per version group (commit, prompt hash, model):
+**Report.** `python -m scripts.report` reads the logs in `_runtime/sessions/` (`--dir` picks another folder) and prints rates per version group (commit and dirty flag, prompt, tools and data hashes, model):
 resolution, frustration, fallback, guard hit and technical error, plus the number of handoff tickets. It writes the same
 numbers to `_runtime/summary.json`. It counts `chat` sessions only, because script, example and eval runs are not real
-customers. `--all` counts them too. It rebuilds the numbers from the logs on every run, so a new rubric or a late label
-shows on the next run.
+customers. `--all` counts them too. It rebuilds the numbers from the logs on every run, so a late label shows on the
+next run. Only judge labels made with the current rubric count as judged. After a rubric change, `--label` judges the sessions again.
 
 Avoided:
 
@@ -286,10 +286,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-152 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+175 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 152 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 175 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -361,6 +361,9 @@ The largest gap: code cannot catch a false statement that has no number in it.
 - **No memory across sessions**, by choice (see [Choices](#choices)).
 - **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth. The judge sees only the messages, not the tool results or the store clock. In one live dev run it marked as resolved a reply that wrongly said the return window had closed.
 - **Session logs grow without rotation.** Each session adds a file to `_runtime/sessions/`, and nothing deletes old ones.
+- **Session logs keep the customer's first name.** `get_order` returns it, and the log stores tool results in full.
+- **The `.md` masking misses some phone formats**, such as `(67) 9 9812-3456`. The session log replaces them.
+- **Dev runs can ignore `--now`.** The `claude` CLI tells the model the machine's real date, so a dev reply can contradict the `--now` clock. SDK runs follow it.
 - **Out of scope:** WhatsApp integration, a web UI, replies in other languages.
 
 ## AI use and time
