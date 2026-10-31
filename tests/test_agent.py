@@ -65,6 +65,26 @@ class AgentTest(unittest.TestCase):
         self.assertEqual([m["role"] for m in a.session.messages], ["user", "assistant"])
         self.assertNotIn("1.999", str(a.session.messages))
 
+    def test_guard_retry_with_tool_round_in_between_cleans_history(self):
+        b = FakeBackend(
+            text("Custa R$ 1.999,00."),
+            tool("get_product", {"id_or_name": "Takamine GD20"}),
+            text("O GD20 custa R$ 2.199,00."),
+        )
+        a = agent(b)
+        self.assertEqual(a.reply("quanto custa o gd20?"), "O GD20 custa R$ 2.199,00.")
+        self.assertNotIn("1.999", str(a.session.messages))
+        roles = [m["role"] for m in a.session.messages]
+        self.assertEqual(roles, ["user", "assistant", "user", "assistant"])
+        self.assertTrue(roles[::2] == ["user", "user"] and roles[1::2] == ["assistant", "assistant"])
+        self.assertEqual(roles[-1], "assistant")
+        tool_use_msg = a.session.messages[1]
+        self.assertEqual(tool_use_msg["content"][0]["type"], "tool_use")
+        self.assertEqual(tool_use_msg["content"][0]["name"], "get_product")
+        result_msg = a.session.messages[2]
+        self.assertEqual(result_msg["content"][0]["type"], "tool_result")
+        self.assertIn("R$ 2.199,00", result_msg["content"][0]["content"])
+
     def test_guard_double_fail_falls_back_with_ticket(self):
         tickets = Path(tempfile.mkdtemp()) / "t.jsonl"
         a = agent(FakeBackend(text("R$ 1,00"), text("R$ 2,00")), tickets)

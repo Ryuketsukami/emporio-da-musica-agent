@@ -107,8 +107,8 @@ class Agent:
             reply_text = turn.text or ""
             verdict = check(reply_text, self.allowed_text())
             if verdict.ok:
-                if guard_failed_once:
-                    del session.messages[-3:-1]
+                for idx in sorted(rejected_indices, reverse=True):
+                    del session.messages[idx]
                 session.note("duda", reply_text)
                 return reply_text
 
