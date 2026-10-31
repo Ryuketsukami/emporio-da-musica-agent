@@ -23,6 +23,7 @@ FALLBACK_NO_TICKET = (
     "Quero te passar uma informação certinha, então vou pedir para alguém da equipe te ajudar. "
     "Você pode falar com a loja pelo WhatsApp (67) 3321-4500."
 )
+EMPTY_REPLY = "resposta vazia"
 TECH_ERROR_TEXT = "Tive um probleminha técnico agora. Pode mandar sua mensagem de novo?"
 
 
@@ -90,7 +91,7 @@ class Agent:
         guard_failed_once = False
         problems: list[str] = []
 
-        for _ in range(MAX_TOOL_ROUNDS + 1):
+        for round_no in range(MAX_TOOL_ROUNDS + 1):
             try:
                 turn = self.backend.call(self.system, session.messages, TOOLS)
             except Exception as exc:
@@ -98,33 +99,45 @@ class Agent:
                 session.note("verificacao", type(exc).__name__)
                 return TECH_ERROR_TEXT
 
-            session.messages.append({"role": "assistant", "content": turn.content})
-
             if turn.tool_calls:
+                if round_no == MAX_TOOL_ROUNDS:
+                    problems = []
+                    session.note("verificacao", "limite de consultas atingido")
+                    break
+                if turn.text and turn.text.strip():
+                    session.note("verificacao", f"texto descartado junto com ferramenta: {turn.text.strip()[:120]}")
+                tool_blocks = [block for block in turn.content if block.get("type") == "tool_use"]
+                session.messages.append({"role": "assistant", "content": tool_blocks})
                 self._run_tools(turn)
                 continue
 
             reply_text = turn.text or ""
-            verdict = check(reply_text, self.allowed_text())
-            if verdict.ok:
-                for idx in sorted(rejected_indices, reverse=True):
-                    del session.messages[idx]
-                session.note("duda", reply_text)
-                return reply_text
+            if not reply_text.strip():
+                problems = [EMPTY_REPLY]
+            else:
+                session.messages.append({"role": "assistant", "content": turn.content})
+                verdict = check(reply_text, self.allowed_text())
+                if verdict.ok:
+                    for idx in sorted(rejected_indices, reverse=True):
+                        del session.messages[idx]
+                    session.note("duda", reply_text)
+                    return reply_text
+                problems = verdict.problems
+                rejected_indices.append(len(session.messages) - 1)
 
-            problems = verdict.problems
-            rejected_indices.append(len(session.messages) - 1)
-            if not guard_failed_once:
-                guard_failed_once = True
-                session.note("verificacao", "; ".join(problems))
+            session.note("verificacao", "; ".join(problems))
+            if guard_failed_once:
+                break
+            guard_failed_once = True
+            if problems == [EMPTY_REPLY]:
+                correction = "[verificação automática] Sua resposta veio vazia. Responda ao cliente com texto."
+            else:
                 correction = (
                     "[verificação automática] Sua resposta citou dados que não vieram de nenhuma consulta: "
                     + "; ".join(problems) + ". Consulte a ferramenta certa ou responda sem esses dados."
                 )
-                session.messages.append({"role": "user", "content": correction})
-                rejected_indices.append(len(session.messages) - 1)
-                continue
-            break
+            session.messages.append({"role": "user", "content": correction})
+            rejected_indices.append(len(session.messages) - 1)
 
         for idx in sorted(rejected_indices, reverse=True):
             del session.messages[idx]

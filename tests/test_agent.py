@@ -100,9 +100,46 @@ class AgentTest(unittest.TestCase):
 
     def test_tool_rounds_are_capped(self):
         b = FakeBackend(*[tool("list_active_promotions", {}, f"c{i}") for i in range(MAX_TOOL_ROUNDS + 1)])
-        out = agent(b).reply("promo?")
+        a = agent(b)
+        out = a.reply("promo?")
         self.assertEqual(len(b.calls), MAX_TOOL_ROUNDS + 1)
         self.assertIn("protocolo", out)
+        self.assertEqual([k for k, _ in a.session.log].count("ferramenta"), MAX_TOOL_ROUNDS)
+        msgs = a.session.messages
+        for i, m in enumerate(msgs):
+            if m["role"] == "assistant" and m["content"][0]["type"] == "tool_use":
+                self.assertEqual(msgs[i + 1]["content"][0]["type"], "tool_result")
+        self.assertEqual(msgs[-1]["content"][0]["text"], out)
+
+    def test_empty_reply_is_retried(self):
+        a = agent(FakeBackend(text(""), text("Oi! Como posso ajudar?")))
+        self.assertEqual(a.reply("oi"), "Oi! Como posso ajudar?")
+        self.assertIn(("verificacao", "resposta vazia"), a.session.log)
+        self.assertEqual([m["role"] for m in a.session.messages], ["user", "assistant"])
+
+    def test_empty_reply_twice_falls_back_without_empty_messages(self):
+        a = agent(FakeBackend(text("  "), Turn(None, [], Usage(), [])))
+        self.assertIn("protocolo", a.reply("oi"))
+        for m in a.session.messages:
+            self.assertTrue(m["content"])
+            if m["role"] == "assistant":
+                self.assertTrue(all(blk.get("text", "x").strip() for blk in m["content"]))
+
+    def test_text_beside_tool_call_is_dropped_and_logged(self):
+        both = Turn("Vou consultar.", [ToolCall("c1", "get_product", {"id_or_name": "Takamine GD20"})], Usage(),
+                    [{"type": "text", "text": "Vou consultar."},
+                     {"type": "tool_use", "id": "c1", "name": "get_product", "input": {"id_or_name": "Takamine GD20"}}])
+        a = agent(FakeBackend(both, text("O GD20 custa R$ 2.199,00.")))
+        self.assertEqual(a.reply("gd20?"), "O GD20 custa R$ 2.199,00.")
+        self.assertEqual([blk["type"] for blk in a.session.messages[1]["content"]], ["tool_use"])
+        self.assertIn(("verificacao", "texto descartado junto com ferramenta: Vou consultar."), a.session.log)
+
+    def test_every_guard_hit_is_logged(self):
+        a = agent(FakeBackend(text("R$ 1,00"), text("R$ 2,00")))
+        a.reply("preço?")
+        hits = [v for k, v in a.session.log if k == "verificacao"]
+        self.assertEqual(len(hits), 2)
+        self.assertIn("R$ 2,00", hits[1])
 
     def test_backend_error_rolls_back(self):
         a = agent(FakeBackend(LLMError("boom")))
