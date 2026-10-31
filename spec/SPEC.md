@@ -264,6 +264,11 @@ or `— loja fechada | reabre seg 03/11 às 09:00`. Outside hours the agent stil
 when something needs a person, it states the reopening time. Holidays are not modelled (L4). The prompt makes
 this line the only clock: the model must ignore any other date it knows (the dev CLI injects the machine's date).
 
+Prompt flags (added after delivery): optional rules in `config/prompt_flags.toml`, switched on with
+`LLM_PROMPT_FLAGS` (default: all three), appended as a final "Regras adicionais" section in file order.
+Each targets one observed miss: `call_tools_directly` (e11), `quote_does_all_math` (c10),
+`quick_human_handoff` (e13). Measured 3 runs on vs 3 off; see `evals/RESULTS.md`.
+
 ## 8. Security: assume the model is hostile
 
 Threat model: the model believes an injected instruction, or is otherwise acting against the store.
@@ -290,6 +295,10 @@ session + `policies.md` text + the customer's own messages + system-prompt facts
 cents after parsing ("R$ 2.199,00" = 219900). Fail → one retry with the reason appended
 ("o valor X não veio de nenhuma consulta"). Fail again → fallback text ("Deixa eu passar isso para
 alguém da equipe confirmar…") + automatic `register_ticket(human)`. Every guard hit is logged.
+
+Shipping check (added after delivery): when the customer's message asks about shipping and the turn
+looked up a product but never called `quote`, a reply that gives a shipping value or "grátis" fails the
+same way, with a reason that asks to keep the rest of the answer.
 
 ## 10. Sessions, transcripts, tickets
 

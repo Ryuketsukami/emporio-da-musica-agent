@@ -239,6 +239,22 @@ class FakeJudge:
         return Turn(self.reply, [], Usage(), [{"type": "text", "text": self.reply}])
 
 
+class ShippingCheckTest(unittest.TestCase):
+    def test_shipping_after_product_lookup_needs_quote(self):
+        b = FakeBackend(tool("get_product", {"id_or_name": "Yamaha C40"}), text("O frete sai grátis!"),
+                        tool("quote", {"items": [{"product_id": 81, "qty": 1}], "city": "Campo Grande"}, "c2"),
+                        text("O frete sai grátis!"))
+        a = agent(b)
+        self.assertEqual(a.reply("frete do C40 pra Campo Grande?"), "O frete sai grátis!")
+        self.assertEqual(len(b.calls), 4)
+        self.assertIn("quote", b.calls[2][-1]["content"])
+
+    def test_flags_reach_the_system_prompt(self):
+        a = Agent(FakeBackend(text("Oi")), STORE, POLICIES, new_session(NOW), lambda: NOW,
+                  Path(tempfile.mkdtemp()) / "t.jsonl", prompt_flags=("call_tools_directly",))
+        self.assertIn("# Regras adicionais", a.system)
+
+
 class CliTest(unittest.TestCase):
     def test_script_run_writes_masked_transcript(self):
         d = Path(tempfile.mkdtemp())

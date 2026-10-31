@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None, backend=None, judge_backend=None) -> int
     source = args.source or ("script" if args.script else "chat")
     keep_phones, keep_emails = public_contacts(policies, store)
     log = EventLog(SESSIONS_DIR / f"{session.id}.jsonl", Pseudonymizer(keep_phones, keep_emails))
-    agent = Agent(backend, store, policies, session, now_fn, events=log)
+    agent = Agent(backend, store, policies, session, now_fn, events=log, prompt_flags=settings.prompt_flags)
     try:
         log.write("header", **build_header(session.id, source, backend.label, agent.system, TOOLS, args.now))
     except Exception as exc:

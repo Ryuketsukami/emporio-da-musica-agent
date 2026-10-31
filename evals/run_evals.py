@@ -76,7 +76,8 @@ def _called_tools(session: Session) -> list[str]:
     return names
 
 
-def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[str], list[str], Session]:
+def run_case(case: dict, backend, events_dir: Path | None = None,
+             prompt_flags: tuple[str, ...] = ()) -> tuple[list[str], list[str], Session]:
     """Logging and labelling never break a case: a failure while starting the log keeps the
     case unlogged (`agent.events` stays `None`); a failed write during the case switches the log
     off (`Agent._emit`); a failure while closing it out is reported but doesn't touch the replies
@@ -86,7 +87,7 @@ def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[
     store = load_store()
     policies = load_policies()
     session = new_session(now_fn())
-    agent = Agent(backend, store, policies, session, now_fn)
+    agent = Agent(backend, store, policies, session, now_fn, prompt_flags=prompt_flags)
 
     log = None
     if events_dir is not None:
@@ -145,7 +146,8 @@ def main(argv: list[str] | None = None, backend=None) -> int:
     passed = 0
     with out_path.open("w", encoding="utf-8") as f:
         for name, case in selected:
-            replies, called, session = run_case(case, backend, events_dir=transcripts_dir)
+            replies, called, session = run_case(case, backend, events_dir=transcripts_dir,
+                                                prompt_flags=settings.prompt_flags)
             failures = evaluate(case, replies, called)
             save_transcript(session, case["id"], transcripts_dir / f"{case['id']}.md")
             record = {
