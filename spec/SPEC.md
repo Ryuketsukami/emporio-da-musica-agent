@@ -265,9 +265,9 @@ when something needs a person, it states the reopening time. Holidays are not mo
 this line the only clock: the model must ignore any other date it knows (the dev CLI injects the machine's date).
 
 Prompt flags (added after delivery): optional rules in `config/prompt_flags.toml`, switched on with
-`LLM_PROMPT_FLAGS` (default: all three), appended as a final "Regras adicionais" section in file order.
+`LLM_PROMPT_FLAGS` (default: all four), appended as a final "Regras adicionais" section in file order.
 Each targets one observed miss: `call_tools_directly` (e11), `quote_does_all_math` (c10),
-`quick_human_handoff` (e13). Measured 3 runs on vs 3 off; see `evals/RESULTS.md`.
+`quick_human_handoff` (e13), `register_complaints_directly` (c11). Measured 3 runs on vs 3 off; see `evals/RESULTS.md`.
 
 ## 8. Security: assume the model is hostile
 
@@ -421,14 +421,20 @@ keeps everything before it. All string values pass through the session's placeho
 |---|---|
 | `header` | `schema` (1), `session`, `source` (`chat` / `script` / `example` / `eval`), `app` {`commit`, `dirty`}, `backend` (`sdk` / `cli`), `model` (configured), `prompt_sha`, `tools_sha`, `data_sha`, `now_override` (ISO or null) |
 | `customer` | `text` |
-| `model_call` | `round`, `content` (blocks as returned), `model` (reported by the API, or null), `usage`, `latency_ms` |
+| `model_call` | `round`, `content` (blocks as returned), `model` (reported by the API, or null), `usage`, `cost_usd`, `latency_ms` |
 | `tool` | `name`, `input`, `result` (full) |
 | `guard` | `problems`, `rejected_text` (null for an empty reply) |
-| `fallback` | `reason` (`guard` / `tool_cap`), `problems`, `text` |
-| `error` | `error` (exception class name) |
-| `reply` | `text` |
+| `fallback` | `reason` (`guard` / `tool_cap`), `problems`, `text`, `usage`, `cost_usd` |
+| `error` | `error` (exception class name), `usage`, `cost_usd` |
+| `reply` | `text`, `usage`, `cost_usd` |
 | `end` | — |
 | `labels` | `rubric_version`, `signals`, `judge` (object or null), `judge_model` (or null) |
+
+`usage` on `reply` / `fallback` / `error` is the sum over that customer message's model calls; `cost_usd` is
+their US-dollar cost from `config/pricing.toml` (list prices per million tokens), or null when any call had no
+price (an unlisted model, or the dev CLI backend). The judge object carries its own `cost_usd`. Eval result
+lines add `messages`, `cost_usd` and `tokens` per case; the report adds `priced_sessions`, `cost_per_session`
+and `cost_per_message` per version group, from sessions with a known cost.
 
 Code signals: `turns`, `tickets` {`complaint`, `human`}, `guard_hits`, `fallbacks`, `tool_cap_hit`,
 `order_misses`, `order_locked`, `tech_errors`, `repeated_question` (two customer messages ≥ 0.9 similar).
