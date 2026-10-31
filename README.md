@@ -150,7 +150,7 @@ Every choice favours fewer moving parts that a reviewer can trace.
 |---|---|---|
 | Agent approach | **Own tool loop; code does the math.** The model picks which of the 8 tools to call. Code computes every number. | LangChain/LangGraph: extra dependencies, harder to trace, no gain at 8 tools. A SQL agent: a model that writes free SQL over customer data is a leak path (LGPD). |
 | Model | **Claude Sonnet 5: reliable tool choice and natural Brazilian Portuguese.** It runs through the Anthropic SDK. Haiku 4.5 is the cost swap: set `LLM_MODEL=claude-haiku-4-5`. | Multi-provider support: more code and tests for no graded gain. |
-| Prompt strategy | **One static, cached system prompt; facts stay behind tools.** It holds the identity, the manual's §7 verbatim as the tone and flow rules, 10 numbered hard rules, a security block, style rules (one says: no text beside tool calls), and the names of the policy sections and categories. The time line goes into each customer turn, outside the cache. Policy bodies stay behind `read_policy`, so each lookup shows in the transcript. | Catalog and manual pasted into the prompt: you cannot see which facts an answer used. A prompt that changes every turn: it breaks the cache. |
+| Prompt strategy | **One static, cached system prompt; facts stay behind tools.** It holds the identity, the manual's §7 verbatim as the tone and flow rules, 10 numbered hard rules, a security block, style rules (one says: no text beside tool calls), and the names of the policy sections and categories. The time line goes into each customer turn, outside the cache, and the prompt makes it the only clock: the model must ignore any other date it knows. Policy bodies stay behind `read_policy`, so each lookup shows in the transcript. | Catalog and manual pasted into the prompt: you cannot see which facts an answer used. A prompt that changes every turn: it breaks the cache. |
 | Policies | **One tool per manual section; no vector search, 8 pages don't need it.** The PDF manual is transcribed to `data/policies.md`, and a unit test checks every line against the PDF. The prompt lists the section names. `read_policy(section)` returns one section. | The whole manual in the prompt (about 5K tokens): it works, but you cannot see when the agent used it. Embeddings: a wrong chunk is a new failure mode. |
 | Dev backend | **Same loop, model call swapped.** `LLM_DEV=true` sends the call through `claude -p` with all built-in tools off. | The CLI with our tools over MCP: the CLI would run its own loop, so dev would test different code than production ships. |
 | Interface | **CLI chat plus `--script` replay.** Replay writes a transcript. | A web UI or API: the brief puts the focus on the agent. |
@@ -178,7 +178,8 @@ The threat model: the model believes an injected instruction, or acts against th
 | Script input (`--script`) | — | Each line is only a customer message. |
 
 Every tool checks its arguments against its schema (types, enums, ranges, string lengths)
-and never raises. Bad input returns `{"erro": "..."}`.
+and never raises. Bad input returns `{"erro": "..."}`. For an unknown parameter or a value outside an enum,
+the error lists the accepted parameters or options, so the model can fix its own call.
 
 **Remaining risks.** The guard cannot catch three things:
 
@@ -289,7 +290,7 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-183 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+183 unit tests check the code without a model. 27 live cases check the agent end to end. The latest SDK run passed 25 of 27; one of the two misses passed 3 of 3 reruns.
 
 ```bash
 python -m unittest discover -s tests -t . -q      # 183 tests, no model calls; the PDF check skips without pypdf
@@ -316,12 +317,15 @@ questions, out of hours, and a false price the customer quotes.
 
 | Backend | `cases.jsonl` | `edge_cases.jsonl` |
 |---|---|---|
-| SDK, `claude-sonnet-5` (final run) | 12/12 | 14/15 |
-| Dev CLI, `sonnet` (final run, after the history fix) | 12/12 | 14/15 |
+| SDK, `claude-sonnet-5` (latest run, after the date rule) | 11/12 | 14/15 |
+| SDK, `claude-sonnet-5` (run before the date rule) | 12/12 | 14/15 |
+| Dev CLI, `sonnet` (after the history fix, before the date rule) | 12/12 | 14/15 |
 
-Both runs come after the final fixes. The one SDK failure is a tool-use miss: in `e13-fora-do-horario`
-the model gave the correct reopening time but asked for the subject before it opened the ticket. The
-one dev failure, `e07`, is a reply that stopped early; the previous dev run passed it. Dev
+Both SDK misses in the latest run are tool-use misses with correct replies. In `c10-frete-local` the model
+worked out free shipping from the policy instead of calling `quote`; the case passed 3 of 3 reruns. In
+`e13-fora-do-horario` the model asks for the subject before it opens the ticket. It fails that check on
+every run, and it gave the reopening time in 2 of 3 reruns. The one dev failure, `e07`, is a reply that
+stopped early; the previous dev run passed it. Dev
 runs before the history fix are not comparable: the dev model did not see its own earlier replies.
 Details per case: [`evals/RESULTS.md`](evals/RESULTS.md).
 
@@ -357,7 +361,7 @@ The largest gap: code cannot catch a false statement that has no number in it.
 
 - **The guard checks numbers and contacts only.** It misses false statements with no number, numbers the customer typed, and numbers spelled out in words (see [Security](#security-assume-the-model-is-hostile)).
 - **Order verification happens in the chat.** In production we would send a one-time code to the email or SMS on file before showing the order.
-- **The model can skip a tool.** The final SDK run had 1 such miss out of 27 (`e13`). Each eval ran once, so the run gives no pass rate. With more time we would run each case several times and report the rate.
+- **The model can skip a tool.** The latest SDK run had 2 such misses out of 27 (`c10`, `e13`). A full run is one pass, so it gives no pass rate. With more time we would run each case several times and report the rate.
 - **Dev-mode tool choice is emulated.** The CLI backend asks the model for a JSON envelope. It is a close copy of native tool use, not the real thing. The final examples and eval numbers come from the SDK.
 - **No cart, checkout or real shipping calculation by CEP.** Shipping outside Campo Grande is "calculated by CEP at checkout".
 - **No holidays or special-date hours.**
@@ -365,7 +369,6 @@ The largest gap: code cannot catch a false statement that has no number in it.
 - **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth. The judge sees only the messages, not the tool results or the store clock. In one live dev run it marked as resolved a reply that wrongly said the return window had closed.
 - **Session logs grow without rotation.** Each session adds a file to `_runtime/sessions/`, and nothing deletes old ones.
 - **Session logs keep the customer's first name.** `get_order` returns it, and the log stores tool results in full.
-- **Dev runs can ignore `--now`.** The `claude` CLI tells the model the machine's real date, so a dev reply can contradict the `--now` clock. SDK runs follow it.
 - **Out of scope:** WhatsApp integration, a web UI, replies in other languages.
 
 ## AI use and time

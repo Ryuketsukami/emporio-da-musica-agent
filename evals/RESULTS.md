@@ -1,6 +1,22 @@
 # Eval results
 
-Final run on the production backend: **26 of 27 cases pass** (cases 12/12, edge 14/15).
+## Latest SDK run (2026-10-31, after the date rule and the option-listing tool errors)
+
+**25 of 27 cases pass** (cases 11/12, edge 14/15), `claude-sonnet-5`, one pass, `python -m evals.run_evals`.
+
+| Case | Result | Note |
+|---|---|---|
+| `c10-frete-local` | fail | did not call `quote`; it read the shipping policy and said "grátis", which is correct. Passed 3 of 3 reruns (`--only`). |
+| `e13-fora-do-horario` | fail | asked for the subject before opening the ticket (as in every run). Gave the reopening time in 2 of 3 reruns. |
+| all other 25 | pass | |
+
+The date rule tells the model to use only the `[agora: ...]` line as its clock. Before it, a dev-CLI run of
+example 04 (`--now 2025-12-26`) said the return window had closed. After it, 3 of 3 dev runs said the window is
+open until 29/12/2025, which is correct.
+
+## Earlier runs
+
+Run before the date rule, production backend: **26 of 27 cases pass** (cases 12/12, edge 14/15).
 The one failure is a tool-use miss. Its reply gave the correct facts.
 
 Both runs below are from 2026-10-31, after the final fix wave (CLI history fix, wider reply guard,
