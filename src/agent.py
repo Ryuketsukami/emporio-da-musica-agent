@@ -1,12 +1,15 @@
 """The agent loop: one model call per round, tool dispatch, and a guarded reply."""
 
+import dataclasses
 import json
+import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from src.config import TICKETS_PATH
 from src.data import Store
+from src.eventlog import EventLog
 from src.guard import check
 from src.llm import Turn
 from src.prompt import system_prompt, user_turn
@@ -36,6 +39,7 @@ class Agent:
         session: Session,
         now_fn: Callable[[], datetime],
         tickets_path: Path = TICKETS_PATH,
+        events: EventLog | None = None,
     ):
         self.backend = backend
         self.store = store
@@ -43,7 +47,12 @@ class Agent:
         self.session = session
         self.now_fn = now_fn
         self.tickets_path = tickets_path
+        self.events = events
         self.system = system_prompt(policies, store)
+
+    def _emit(self, kind: str, **fields) -> None:
+        if self.events is not None:
+            self.events.write(kind, **fields)
 
     def allowed_text(self) -> str:
         parts = [self.system, "\n".join(self.policies.values())]
@@ -57,6 +66,7 @@ class Agent:
         for call in turn.tool_calls:
             ctx = ToolContext(self.store, self.policies, session, self.now_fn(), self.tickets_path)
             result = run_tool(call.name, call.input, ctx)
+            self._emit("tool", name=call.name, input=call.input, result=result)
             dumped = json.dumps(result, ensure_ascii=False)
             session.tool_results.append(dumped)
             session.note("ferramenta",
@@ -64,7 +74,7 @@ class Agent:
             blocks.append({"type": "tool_result", "tool_use_id": call.id, "content": dumped})
         session.messages.append({"role": "user", "content": blocks})
 
-    def _fallback(self, problems: list[str]) -> str:
+    def _fallback(self, problems: list[str], reason: str) -> str:
         session = self.session
         try:
             record = append_ticket(session, "human", f"Resposta bloqueada: {problems or 'limite de consultas'}",
@@ -78,6 +88,7 @@ class Agent:
         else:
             session.messages.append({"role": "assistant", "content": [{"type": "text", "text": fallback}]})
         session.note("duda", fallback)
+        self._emit("fallback", reason=reason, problems=problems, text=fallback)
         return fallback
 
     def reply(self, text: str) -> str:
@@ -85,23 +96,32 @@ class Agent:
         start_len = len(session.messages)
         session.customer_texts.append(text)
         session.note("cliente", text)
+        self._emit("customer", text=text)
         session.messages.append({"role": "user", "content": user_turn(text, self.now_fn())})
 
         rejected_indices: list[int] = []
         guard_failed_once = False
         problems: list[str] = []
+        fallback_reason = "guard"
 
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             try:
+                call_start = time.monotonic()
                 turn = self.backend.call(self.system, session.messages, TOOLS)
+                latency_ms = int((time.monotonic() - call_start) * 1000)
             except Exception as exc:
                 del session.messages[start_len:]
                 session.note("verificacao", type(exc).__name__)
+                self._emit("error", error=type(exc).__name__)
                 return TECH_ERROR_TEXT
+
+            self._emit("model_call", round=round_no, content=turn.content, model=turn.model,
+                        usage=dataclasses.asdict(turn.usage), latency_ms=latency_ms)
 
             if turn.tool_calls:
                 if round_no == MAX_TOOL_ROUNDS:
                     problems = []
+                    fallback_reason = "tool_cap"
                     session.note("verificacao", "limite de consultas atingido")
                     break
                 if turn.text and turn.text.strip():
@@ -114,6 +134,7 @@ class Agent:
             reply_text = turn.text or ""
             if not reply_text.strip():
                 problems = [EMPTY_REPLY]
+                self._emit("guard", problems=problems, rejected_text=None)
             else:
                 session.messages.append({"role": "assistant", "content": turn.content})
                 verdict = check(reply_text, self.allowed_text())
@@ -121,9 +142,11 @@ class Agent:
                     for idx in sorted(rejected_indices, reverse=True):
                         del session.messages[idx]
                     session.note("duda", reply_text)
+                    self._emit("reply", text=reply_text)
                     return reply_text
                 problems = verdict.problems
                 rejected_indices.append(len(session.messages) - 1)
+                self._emit("guard", problems=problems, rejected_text=reply_text)
 
             session.note("verificacao", "; ".join(problems))
             if guard_failed_once:
@@ -142,4 +165,4 @@ class Agent:
         for idx in sorted(rejected_indices, reverse=True):
             del session.messages[idx]
 
-        return self._fallback(problems)
+        return self._fallback(problems, fallback_reason)

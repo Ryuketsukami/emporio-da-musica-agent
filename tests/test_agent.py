@@ -6,6 +6,7 @@ from src import cli
 from src.agent import FALLBACK_NO_TICKET, MAX_TOOL_ROUNDS, TECH_ERROR_TEXT, Agent
 from src.clock import parse_now
 from src.data import load_store
+from src.eventlog import EventLog, Pseudonymizer, read_events
 from src.llm import LLMError, ToolCall, Turn, Usage
 from src.policies import load_policies
 from src.session import new_session
@@ -145,6 +146,59 @@ class AgentTest(unittest.TestCase):
         a = agent(FakeBackend(LLMError("boom")))
         self.assertEqual(a.reply("oi"), TECH_ERROR_TEXT)
         self.assertEqual(a.session.messages, [])
+
+
+def logged_agent(backend):
+    d = Path(tempfile.mkdtemp())
+    log = EventLog(d / "s.jsonl", Pseudonymizer())
+    a = Agent(backend, STORE, POLICIES, new_session(NOW), lambda: NOW, d / "t.jsonl", events=log)
+    return a, log
+
+
+class EventEmissionTest(unittest.TestCase):
+    def kinds(self, log):
+        return [e["kind"] for e in read_events(log.path)]
+
+    def test_tool_round_and_reply(self):
+        a, log = logged_agent(FakeBackend(tool("get_product", {"id_or_name": "Takamine GD20"}), text("O GD20 custa R$ 2.199,00.")))
+        a.reply("quanto custa o gd20? meu e-mail é x@y.com")
+        events = read_events(log.path)
+        self.assertEqual(self.kinds(log), ["customer", "model_call", "tool", "model_call", "reply"])
+        self.assertEqual(events[0]["text"], "quanto custa o gd20? meu e-mail é <EMAIL_1>")
+        self.assertEqual(events[2]["result"]["preco"], "R$ 2.199,00")
+        self.assertIn("especificacoes", events[2]["result"])  # full result, not truncated
+        self.assertEqual(events[1]["round"], 0)
+        self.assertIsInstance(events[1]["latency_ms"], int)
+        self.assertEqual(set(events[1]["usage"]), {"input", "output", "cache_read", "cache_write"})
+
+    def test_guard_rejection_keeps_rejected_text(self):
+        a, log = logged_agent(FakeBackend(text("Custa R$ 1.999,00."), text("Vou consultar o preço certinho.")))
+        a.reply("preço?")
+        guard = [e for e in read_events(log.path) if e["kind"] == "guard"]
+        self.assertEqual(guard[0]["rejected_text"], "Custa R$ 1.999,00.")
+        self.assertEqual(guard[0]["problems"], ["o valor R$ 1.999,00 não veio de nenhuma consulta"])
+        self.assertEqual(self.kinds(log)[-1], "reply")
+
+    def test_fallback_and_error(self):
+        a, log = logged_agent(FakeBackend(text("R$ 1,00"), text("R$ 2,00")))
+        a.reply("preço?")
+        fb = [e for e in read_events(log.path) if e["kind"] == "fallback"]
+        self.assertEqual((len(fb), fb[0]["reason"]), (1, "guard"))
+        a2, log2 = logged_agent(FakeBackend(LLMError("boom")))
+        a2.reply("oi")
+        self.assertEqual(self.kinds(log2), ["customer", "error"])
+        self.assertEqual(read_events(log2.path)[1]["error"], "LLMError")
+
+    def test_tool_cap_fallback_reason(self):
+        b = FakeBackend(*[tool("list_active_promotions", {}, f"c{i}") for i in range(MAX_TOOL_ROUNDS + 1)])
+        a, log = logged_agent(b)
+        a.reply("promo?")
+        self.assertEqual([e["reason"] for e in read_events(log.path) if e["kind"] == "fallback"], ["tool_cap"])
+
+    def test_without_events_nothing_changes(self):
+        a = agent(FakeBackend(text("Oi!")))
+        self.assertIsNone(a.events)
+        self.assertEqual(a.reply("oi"), "Oi!")
 
 
 class CliTest(unittest.TestCase):
