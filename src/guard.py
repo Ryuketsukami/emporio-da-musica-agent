@@ -123,20 +123,24 @@ def check(reply: str, allowed: str) -> Verdict:
     return Verdict(ok=not problems, problems=problems)
 
 
-SHIPPING_PROBLEM = "o frete foi informado sem a ferramenta quote"
+SHIPPING_PROBLEM = ("o valor do frete veio sem a ferramenta quote (chame quote com o produto e a cidade, "
+                    "ou não fale de valor de frete; mantenha o resto da resposta)")
 _FRETE_RE = re.compile(r"\bfrete\b", re.IGNORECASE)
+_SHIPPING_ASK_RE = re.compile(r"\b(frete|entrega|envio|enviar|entregar)\b", re.IGNORECASE)
 _FREE_RE = re.compile(r"gr[aá]tis|gratuito|sem custo", re.IGNORECASE)
 _PRODUCT_TOOLS = {"get_product", "search_products"}
 
 
-def shipping_without_quote(reply: str, tools_this_turn: set[str]) -> str | None:
-    """A shipping value given right after a product lookup must come from quote: code does every number.
+def shipping_without_quote(reply: str, tools_this_turn: set[str], customer_text: str) -> str | None:
+    """When the customer asks about shipping for a product, the shipping value must come from quote.
 
-    A general policy answer ("frete grátis acima de R$ 500") with no product lookup is not affected.
+    Only a shipping question counts: a friendly shipping remark in a price answer, or a general policy
+    answer with no product lookup, is left alone, so the check never throws away a good answer.
     """
+    if not _SHIPPING_ASK_RE.search(customer_text):
+        return None
     if "quote" in tools_this_turn or not (_PRODUCT_TOOLS & tools_this_turn):
         return None
     if _FRETE_RE.search(reply) and (_money_matches(reply) or _FREE_RE.search(reply)):
         return SHIPPING_PROBLEM
     return None
-

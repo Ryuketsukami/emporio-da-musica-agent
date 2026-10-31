@@ -148,7 +148,7 @@ class Agent:
             else:
                 session.messages.append({"role": "assistant", "content": turn.content})
                 verdict = check(reply_text, self.allowed_text())
-                shipping = shipping_without_quote(reply_text, tools_this_turn)
+                shipping = shipping_without_quote(reply_text, tools_this_turn, text)
                 if verdict.ok and shipping is None:
                     for idx in sorted(rejected_indices, reverse=True):
                         del session.messages[idx]

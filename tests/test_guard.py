@@ -1,6 +1,6 @@
 import unittest
 
-from src.guard import shipping_without_quote, check, money_cents
+from src.guard import SHIPPING_PROBLEM, shipping_without_quote, check, money_cents
 from src.session import PHONE_RE
 
 
@@ -103,15 +103,23 @@ class WideGuardTest(unittest.TestCase):
 
 
 class ShippingNeedsQuoteTest(unittest.TestCase):
-    PROBLEM = "o frete foi informado sem a ferramenta quote"
+    ASKED = "Quanto fica o frete de um Yamaha C40 para Campo Grande?"
 
-    def test_product_shipping_without_quote_is_flagged(self):
-        self.assertEqual(shipping_without_quote("O frete pra Campo Grande sai grátis!", {"get_product", "read_policy"}), self.PROBLEM)
-        self.assertEqual(shipping_without_quote("Frete: R$ 35,00.", {"search_products"}), self.PROBLEM)
+    def test_shipping_question_answered_without_quote_is_flagged(self):
+        self.assertEqual(shipping_without_quote("O frete pra Campo Grande sai grátis!", {"get_product", "read_policy"}, self.ASKED),
+                         SHIPPING_PROBLEM)
+        self.assertEqual(shipping_without_quote("Frete: R$ 35,00.", {"search_products"}, "e a entrega, quanto fica?"), SHIPPING_PROBLEM)
 
     def test_allowed_cases(self):
-        self.assertIsNone(shipping_without_quote("O frete sai grátis!", {"get_product", "quote"}))
-        self.assertIsNone(shipping_without_quote("Frete grátis acima de R$ 500,00.", {"read_policy"}))
-        self.assertIsNone(shipping_without_quote("O violão custa R$ 599,90.", {"get_product"}))
-        self.assertIsNone(shipping_without_quote("Quer que eu calcule o frete?", {"get_product"}))
+        self.assertIsNone(shipping_without_quote("O frete sai grátis!", {"get_product", "quote"}, self.ASKED))
+        self.assertIsNone(shipping_without_quote("Frete grátis acima de R$ 500,00.", {"read_policy"}, self.ASKED))
+        self.assertIsNone(shipping_without_quote("Quer que eu calcule o frete?", {"get_product"}, self.ASKED))
 
+    def test_a_side_remark_about_shipping_is_not_flagged(self):
+        # The customer asked about PIX; a friendly shipping remark must not send the whole answer back.
+        reply = "No PIX sai por R$ 10.924,05. E o frete em Campo Grande é grátis acima de R$ 500!"
+        self.assertIsNone(shipping_without_quote(reply, {"get_product"}, "Quanto fica o Martin D-28 no PIX?"))
+
+    def test_problem_text_asks_to_keep_the_answer(self):
+        self.assertIn("quote", SHIPPING_PROBLEM)
+        self.assertIn("mantenha o resto da resposta", SHIPPING_PROBLEM)
