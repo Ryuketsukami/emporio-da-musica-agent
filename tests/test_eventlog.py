@@ -6,6 +6,7 @@ from pathlib import Path
 from src.data import load_store
 from src.eventlog import EventLog, Pseudonymizer, append_event, public_contacts, read_events
 from src.policies import load_policies
+from tests.test_session import AFTER_PHONE, LOOSE_PHONES, NOT_PHONES
 
 
 class PseudonymizerTest(unittest.TestCase):
@@ -31,6 +32,18 @@ class PseudonymizerTest(unittest.TestCase):
             self.assertEqual(p.scrub(f"meu fone: {raw}."), "meu fone: <PHONE_1>.", raw)
         p = Pseudonymizer()
         self.assertEqual(p.scrub("(67) 99812-3456 e (67) 9 9812-3456"), "<PHONE_1> e <PHONE_1>")
+
+    def test_loose_phones_are_tagged_before_any_punctuation(self):
+        for raw in LOOSE_PHONES:
+            for after in AFTER_PHONE:
+                self.assertEqual(Pseudonymizer().scrub(f"meu número é {raw}{after}"), f"meu número é <PHONE_1>{after}",
+                                 raw + after)
+        p = Pseudonymizer()
+        self.assertEqual(p.scrub("+55 67 9 9812-3456, ou (67) 99812-3456"), "<PHONE_1>, ou <PHONE_1>")
+
+    def test_phone_look_alikes_are_not_tagged(self):
+        for text in NOT_PHONES:
+            self.assertEqual(Pseudonymizer().scrub(text), text)
 
     def test_loose_phone_keeps_public_numbers_and_non_phones(self):
         p = Pseudonymizer(keep_phones=frozenset({"33414444"}))

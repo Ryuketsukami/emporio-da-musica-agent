@@ -63,15 +63,7 @@ class Pseudonymizer:
             return self._phone_tag(digits)
 
         text = PHONE_RE.sub(_phone_sub, text)
-
-        def _loose_sub(m):
-            matched = m.group()
-            digits = "".join(c for c in matched if c.isdigit())
-            if not 8 <= len(digits) <= 13 or digits[-8:] in self.keep_phones:
-                return matched
-            return self._phone_tag(digits[-8:])
-
-        return LOOSE_PHONE_RE.sub(_loose_sub, text)
+        return LOOSE_PHONE_RE.sub(_phone_sub, text)
 
     def contact_tag(self, value: str) -> str:
         """The tag for a value the model sent as a contact: always replaced, whatever its format,

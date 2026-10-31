@@ -242,7 +242,10 @@ one log per case to `_runtime/evals/`. Each event is one JSON line, written and 
 | `end` | the end of the session |
 | `labels` | outcome labels, added after the session |
 
-**Placeholders, not masking.** Customer e-mails and phones, in any common format such as `(67) 9 9812-3456`, become `<EMAIL_1>`, `<PHONE_1>` and so on.
+**Placeholders, not masking.** Customer e-mails and phones become `<EMAIL_1>`, `<PHONE_1>` and so on.
+A phone is found by the shape of a Brazilian number: an optional `+55`, an optional DDD (2 digits, with or without
+parentheses or a leading 0), then a mobile 9 plus 8 digits or a landline starting with 2 to 5 plus 7 digits.
+Spaces, dots or hyphens may separate the groups, as in `(67) 9 9812-3456`, `998123456` or `067998123456`.
 The same value keeps the same tag for the whole session, and the value-to-tag mapping is never stored.
 The `.md` masking is not enough here: two different e-mails can mask to the same `l***@jmail.com`, so a
 replay can show one value where the customer typed several. Store and partner contacts stay readable.
@@ -286,10 +289,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-177 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
+181 unit tests check the code without a model. 27 live cases check the agent end to end. The final SDK run passed 26 of 27.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 177 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 181 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
