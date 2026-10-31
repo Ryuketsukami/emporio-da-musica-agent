@@ -296,7 +296,7 @@ Claude Code built this, running as "Straxia", an agent on QUYSS (the author's ow
 3. It wrote the 12-task plan in [`docs/superpowers/plans/`](docs/superpowers/plans/2026-10-31-emporio-agent.md).
 4. It built the plan with the superpowers workflow: one fresh implementer sub-agent per task under TDD, then one reviewer sub-agent per task. Review findings went back to the implementer. Three tasks needed one fix round: a crash on non-dict tool arguments, a history-cleanup bug after a guard retry, and an eval that passed without testing what its name said.
 5. Live evals ran on the dev CLI backend during the build. The SDK produced the final examples and eval numbers.
-6. A final review of the whole branch found 1 critical and 8 important issues. The critical one: the dev backend dropped the model's own earlier replies from the history. One fix wave fixed all of them test-first, then re-ran both eval sets and regenerated every example.
+6. A final review of the whole branch found 1 critical and 8 important issues. The critical one: the product search cut 12 results to 10 without telling the model, so the first example left out two guitars. One important one: the dev backend dropped the model's own earlier replies from the history. One fix wave fixed all of them test-first, then re-ran both eval sets and regenerated every example.
 
 **Time spent:** about 3 h 20 min of wall-clock on 2026-10-31, from 11:46 to about 15:05 UTC. The design interview and spec took
 about 1 h (11:46 to the first commit, `4979c4b`, at 12:40). The plan, build, final review and fixes took about 2 h 25 min
