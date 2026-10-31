@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from src.config import TICKETS_PATH
+from src.config import ORDER_MISSES_PATH, TICKETS_PATH
 from src.data import Store
 from src.eventlog import EventLog
 from src.guard import check, shipping_without_quote
@@ -42,6 +42,7 @@ class Agent:
         tickets_path: Path = TICKETS_PATH,
         events: EventLog | None = None,
         prompt_flags: tuple[str, ...] = (),
+        order_misses_path: Path | None = ORDER_MISSES_PATH,
     ):
         self.backend = backend
         self.store = store
@@ -49,6 +50,7 @@ class Agent:
         self.session = session
         self.now_fn = now_fn
         self.tickets_path = tickets_path
+        self.order_misses_path = order_misses_path
         self.events = events
         self.system = system_prompt(policies, store, prompt_flags)
 
@@ -72,7 +74,8 @@ class Agent:
         session = self.session
         blocks = []
         for call in turn.tool_calls:
-            ctx = ToolContext(self.store, self.policies, session, self.now_fn(), self.tickets_path)
+            ctx = ToolContext(self.store, self.policies, session, self.now_fn(), self.tickets_path,
+                              self.order_misses_path)
             result = run_tool(call.name, call.input, ctx)
             self._emit("tool", name=call.name, input=call.input, result=result)
             dumped = json.dumps(result, ensure_ascii=False)

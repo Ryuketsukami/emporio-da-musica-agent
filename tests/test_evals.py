@@ -8,7 +8,7 @@ from unittest import mock
 from evals.run_evals import DEFAULT_NOW, build_record, cost_line, evaluate, load_cases, main, run_case
 from src.config import ROOT
 from src.eventlog import read_events
-from src.llm import Turn, Usage
+from src.llm import ToolCall, Turn, Usage
 
 
 class _BoomBackend:
@@ -102,6 +102,24 @@ class RunCaseEventsTest(unittest.TestCase):
                 case, FakeBackend(text("Oi! Como posso ajudar?")), events_dir=events_dir)
         self.assertEqual(replies, ["Oi! Como posso ajudar?"])
         self.assertEqual(called, [])
+
+
+class PriorOrderMissesTest(unittest.TestCase):
+    def lookup(self, case):
+        call = ToolCall("c1", "get_order", {"order_id": 5, "email_or_phone": "rafael.pereira@jmail.com"})
+        backend = FakeBackend(Turn(None, [call], Usage(), [{"type": "tool_use", "id": "c1", "name": "get_order",
+                                                            "input": call.input}]), text("ok"))
+        _, _, session = run_case(case, backend)
+        return session.tool_results[0]
+
+    def test_seeded_misses_lock_the_order(self):
+        result = self.lookup({"id": "x", "messages": ["oi"], "prior_order_misses": {"5": 3}})
+        self.assertIn("bloqueada", result)
+        self.assertNotIn("Crafter", result)
+
+    def test_without_seed_each_case_starts_clean(self):
+        self.lookup({"id": "x", "messages": ["oi"], "prior_order_misses": {"5": 2}})
+        self.assertIn("Crafter", self.lookup({"id": "y", "messages": ["oi"]}))
 
 
 class CostTest(unittest.TestCase):

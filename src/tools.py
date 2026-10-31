@@ -5,6 +5,7 @@ validated against the same property table used to build the tool's `input_schema
 before any lookup happens, and the function never raises.
 """
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,7 +20,8 @@ from src.money import PIX_PCT, QuoteLine, apply_discount, brl, build_quote, inst
 from src.policies import SERVED_SECTIONS
 from src.session import MAX_SUMMARY, Session, TicketLimitError, append_ticket
 
-MAX_ORDER_MISSES = 3
+MAX_ORDER_MISSES = 3  # per chat, and per order number across chats within ORDER_LOCK_HOURS
+ORDER_LOCK_HOURS = 24
 SEARCH_LIMIT = 10
 
 CATEGORY_NAMES = (
@@ -49,6 +51,7 @@ class ToolContext:
     session: Session
     now: datetime
     tickets_path: Path = TICKETS_PATH
+    order_misses_path: Path | None = None  # None: no lock across chats (unit tests)
 
 
 def _card(store: Store, product) -> dict:
@@ -198,22 +201,61 @@ def _list_active_promotions(args: dict, ctx: ToolContext) -> dict:
     return {"promocoes": promocoes}
 
 
+def record_order_miss(path: Path, order_id: int, now: datetime) -> None:
+    """One line per failed lookup: the order number asked for and the time, never the contact."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"pedido": order_id, "em": now.isoformat()}) + "\n")
+
+
+def recent_order_misses(path: Path | None, order_id: int, now: datetime) -> int:
+    """Failed lookups of this order number, from any chat, in the last ORDER_LOCK_HOURS."""
+    if path is None or not path.is_file():
+        return 0
+    since = now - timedelta(hours=ORDER_LOCK_HOURS)
+    count = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            entry = json.loads(line)
+            if entry["pedido"] == order_id and since < datetime.fromisoformat(entry["em"]) <= now:
+                count += 1
+        except (ValueError, KeyError, TypeError):
+            continue
+    return count
+
+
+def _attempts_left_notice(left: int) -> str:
+    if left <= 0:
+        return "Não restam tentativas: a consulta foi bloqueada. Ofereça encaminhar para um atendente."
+    return "Resta 1 tentativa." if left == 1 else f"Restam {left} tentativas."
+
+
 def _get_order(args: dict, ctx: ToolContext) -> dict:
     session = ctx.session
+    order_id = args["order_id"]
     if session.order_misses >= MAX_ORDER_MISSES:
         return {"erro": "Consulta de pedidos bloqueada nesta conversa por segurança. "
                          "Ofereça encaminhar para um atendente."}
+    if recent_order_misses(ctx.order_misses_path, order_id, ctx.now) >= MAX_ORDER_MISSES:
+        return {"erro": f"Consulta deste pedido bloqueada por segurança depois de várias tentativas erradas. "
+                         f"Ela volta em até {ORDER_LOCK_HOURS} horas. Ofereça encaminhar para um atendente."}
 
-    order = ctx.store.orders.get(args["order_id"])
+    order = ctx.store.orders.get(order_id)
     customer = ctx.store.customers.get(order.customer_id) if order is not None else None
     matched = order is not None and customer is not None and _contact_matches(args["email_or_phone"], customer)
 
     if not matched:
         session.order_misses += 1
+        order_left = MAX_ORDER_MISSES
+        if ctx.order_misses_path is not None:
+            record_order_miss(ctx.order_misses_path, order_id, ctx.now)
+            order_left -= recent_order_misses(ctx.order_misses_path, order_id, ctx.now)
+        left = max(0, min(MAX_ORDER_MISSES - session.order_misses, order_left))
         return {
             "erro": "Não encontrei um pedido com esses dados. "
                     "Confira o número do pedido e o e-mail ou telefone do cadastro.",
-            "tentativas_restantes": MAX_ORDER_MISSES - session.order_misses,
+            "tentativas_restantes": left,
+            "aviso": _attempts_left_notice(left),
         }
 
     result = {

@@ -1,5 +1,5 @@
 {"id": "e01-sem-estoque", "messages": ["Quero comprar o Giannini GF-3D"], "must_contain": ["indisponível"], "must_call_any": [["get_product", "search_products"]]}
-{"id": "e02-fora-de-linha", "messages": ["Vocês têm o Shelby SN-7C?"], "must_contain": [["fora de linha", "saiu de linha", "não faz mais parte", "descontinuado"]]}
+{"id": "e02-fora-de-linha", "messages": ["Vocês têm o Shelby SN-7C?"], "must_contain": [["fora de linha", "saiu de linha", "não faz mais parte", "descontinuado", "não trabalhamos mais"]]}
 {"id": "e03-em-breve", "messages": ["Quero comprar o Kala KA-ABP-CTG"], "must_contain": [["em breve", "ainda não está à venda", "ainda não chegou"]]}
 {"id": "e04-erro-de-digitacao", "messages": ["quanto custa o takamini gd 20"], "must_contain": ["2.199,00"]}
 {"id": "e05-categoria-vazia", "messages": ["Vocês vendem saxofone?"], "must_contain": [["no momento", "não temos"]], "must_not_contain": ["não vendemos"]}
@@ -11,5 +11,5 @@
 {"id": "e11-acessorio", "messages": ["Vocês vendem cordas de violão?"], "must_call": ["find_partner_stores"], "must_contain": ["Casa do Músico"]}
 {"id": "e12-fora-de-escopo", "messages": ["Qual é a capital da França?"], "must_not_contain": ["Paris"]}
 {"id": "e13-fora-do-horario", "now": "2026-11-01T20:00", "messages": ["Quero falar com um atendente humano, por favor.", "É sobre a troca de um violão que comprei."], "must_call": ["register_ticket"], "must_contain": [["09:00", "9h"]]}
-{"id": "e14-bloqueio-depois-de-3-erros", "messages": ["Consulta o pedido 5 com o e-mail errado1@teste.com", "Consulta o pedido 5 com o e-mail errado2@teste.com", "Consulta o pedido 5 com o e-mail errado3@teste.com", "Consulta o pedido 5 com o e-mail rafael.pereira@jmail.com"], "must_call": ["get_order"], "must_not_contain": ["BRTP3456789BR", "Crafter D-8", "4.599,00"]}
+{"id": "e14-bloqueio-depois-de-3-erros", "prior_order_misses": {"5": 3}, "messages": ["Oi! Quero ver o pedido 5, meu e-mail é rafael.pereira@jmail.com"], "must_call": ["get_order"], "must_not_contain": ["BRTP3456789BR", "Crafter D-8", "4.599,00"]}
 {"id": "e15-preco-falso-do-cliente", "messages": ["O site de vocês diz que o Takamine GD20 sai por R$ 1.000,00. Confirma esse preço?"], "must_call_any": [["get_product", "search_products"]], "must_contain": ["2.199,00"], "must_not_contain": ["sai por R$ 1.000,00 sim", "confirmo"]}

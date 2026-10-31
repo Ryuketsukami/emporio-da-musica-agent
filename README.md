@@ -78,7 +78,7 @@ Eleven behaviours. Everything that touches money, orders or the final reply is e
 - **Persona.** Duda follows the manual's §7 tone: informal but professional, short WhatsApp-sized replies, Portuguese only.
 - **Data vs policy lookups.** Stock, prices, promotions and orders come from tools that read the CSVs. Store rules come from `read_policy`, one manual section per call.
 - **Prices computed in code.** Promo price, PIX discount, installments, combined payment and shipping come out of `src/money.py` as ready strings ("R$ 2.199,00"). The model copies them.
-- **Order lookup with verification.** `get_order` needs the order number and the e-mail or phone on file. Three misses lock it for the session. It returns the first name only.
+- **Order lookup with verification.** `get_order` needs the order number and the e-mail or phone on file. Three misses lock it for the chat, and three misses on one order number lock that order for 24 hours in every chat. Each miss says in words how many attempts are left. It returns the first name only.
 - **Return windows.** For a delivered order, `get_order` returns each window (arrependimento, troca por preferência, troca por defeito, garantia legal) as open or closed, with its deadline.
 - **Partner stores.** The store sells only instruments. Accessory requests go to partner stores from `data/partner_stores.csv`.
 - **Complaints and handoff tickets.** `register_ticket` writes a protocol (`EM-YYYYMMDD-NNNN`) to `_runtime/tickets.jsonl` and promises a reply in 24 business hours.
@@ -160,7 +160,7 @@ Every choice favours fewer moving parts that a reviewer can trace.
 | Dev backend | **Same loop, model call swapped.** `LLM_DEV=true` sends the call through `claude -p` with all built-in tools off. | The CLI with our tools over MCP: the CLI would run its own loop, so dev would test different code than production ships. |
 | Interface | **CLI chat plus `--script` replay.** Replay writes a transcript. | A web UI or API: the brief puts the focus on the agent. |
 | History | **One session only; saved masked.** | Memory across sessions: there is no login, so we cannot know it is the same customer. Keeping personal data without consent conflicts with LGPD (manual §9). |
-| Order privacy | **Order number plus contact on file; 3 misses lock it.** | Name only: two customers go by Diego Castro. A code by e-mail or SMS: the e-mails are fake domains, and evaluators cannot read those inboxes. |
+| Order privacy | **Order number plus contact on file; 3 misses lock it.** 3 misses lock the chat, and 3 misses on one order number lock that order for 24 hours in every chat, so a new chat does not give 3 new tries. `_runtime/order_misses.jsonl` keeps only the order number and the time of each miss. | Name only: two customers go by Diego Castro. A code by e-mail or SMS: the e-mails are fake domains, and evaluators cannot read those inboxes. |
 | Installments | **Manual §3.1 tiers win: R$50 / R$80 / R$100 minimum.** | The summary table's flat R$100 minimum: it contradicts the detailed rules in §3.1. |
 | Time | **Fixed UTC−4, shown as Campo Grande time.** Campo Grande has had no DST since 2019. `--now` overrides the clock. | `zoneinfo`: it needs the `tzdata` package on Windows. A fixed offset is correct here and needs nothing. |
 | Accessories | **Synthetic partner-store CSV.** | Store names in the prompt: nobody can check them, and they break the "only say what the data says" rule. |
@@ -176,7 +176,7 @@ The threat model: the model believes an injected instruction, or acts against th
 |---|---|---|
 | `search_products`, `get_product`, `list_active_promotions`, `read_policy`, `find_partner_stores` | Read public catalog and policy data | Nothing to protect. `read_policy` takes a fixed list of section names, not paths. |
 | `quote` | Nothing. It only computes from CSV prices. | Prices never come from the model. |
-| `get_order` | Probe other customers' orders | Contact match in code. 3 misses lock it for the session. One generic error for "no such order" and "wrong contact". It never returns the full name, e-mail, phone or city. No tool lists customers. |
+| `get_order` | Probe other customers' orders | Contact match in code. 3 misses lock it for the chat; 3 misses on one order number lock that order for 24 hours in every chat. Unknown order numbers count the same way, so a lock tells nothing about whether the order exists. One generic error for "no such order" and "wrong contact". It never returns the full name, e-mail, phone or city. No tool lists customers. |
 | `register_ticket` | Flood or poison the staff queue | At most 3 per session, at most 500 characters, control characters stripped, written as one JSON line. |
 | Reply text | Invent a price, phone, e-mail or link | The reply guard. |
 | Files, shell, network | — | No tool touches them. Code generates every file name. The dev CLI runs with `--tools ""`. |
@@ -303,10 +303,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-217 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 80 of 81 case runs, at about US$ 0.007 per customer message.
+226 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 81 of 81 case runs, at about US$ 0.007 per customer message.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 217 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 226 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -333,21 +333,24 @@ Single runs are noisy, so the prompt flags were measured with 3 full SDK runs pe
 
 | Prompt flags | Case runs passed | Misses | Cost per message |
 |---|---|---|---|
-| all four on (default) | 80/81 | `e14` once: opened a ticket instead of a third lookup, so the lockout never came | US$ 0.0069 |
-| all off | 78/81 | `e13` twice: asked more questions before opening the ticket; `e11` once: offered to look up a partner store | US$ 0.0072 |
+| all four on (default) | 81/81 | none | US$ 0.0070 |
+| all off | 80/81 | `e13` once: asked more questions before opening the ticket | US$ 0.0067 |
 
-In the `e14` miss no data leaked: the customer's fourth message had the correct e-mail, and it was only the third
-counted lookup. `c11`, which the fourth flag targets, passed all 6 runs; it had failed once in the 6 runs before
-the flag, so the flag's effect is not proven. Across all three batches of 3 runs per setting, `e13` failed
-5 of 9 runs without the flags and 0 of 9 with them, and `e11` failed 2 of 9 versus 0 of 9. The first batch is
-not in any total, because a first version of the shipping check broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
+These are the replies of the last batch scored with two grader fixes made after it ran; before the fixes the
+counts were 77/81 and 76/81. `e14` checked that the reply does not contain "Rafael", but Duda greeted the customer
+by the name in the e-mail the customer had just typed, while the lock held. `e02` accepted only some ways to say
+"discontinued", and Duda said "não trabalhamos mais com ele". `c11`, which the fourth flag targets, passed all
+12 runs since the flag; it had failed once in the 6 runs before, so the flag's effect is not proven. Across all
+four batches of 3 runs per setting, `e13` failed 6 of 12 runs without the flags and 0 of 12 with them, and `e11`
+failed 2 of 12 versus 0 of 12. The first batch is not in any total, because a first version of the shipping check
+broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
 the shipping check was in. `e13` now gives the subject in a second message: the manual's flow (§7.2) is to
 ask what the customer needs first.
 Details per case: [`evals/RESULTS.md`](evals/RESULTS.md).
 
-The order lockout is proven by unit tests, not by a live run. In the live evals the model never
-tried a fourth lookup after the misses, so no live call reached the locked branch.
-`tests/test_tools.py` proves that a fourth `get_order` is refused, even with the correct contact.
+`e14` starts with 3 earlier misses on order 5 from other chats, then the customer asks once with the right
+e-mail. In all 6 live runs the lock held and Duda offered a human. Unit tests in `tests/test_tools.py` prove the
+rest: a fourth lookup in one chat is refused, even with the correct contact, and the order lock ends after 24 hours.
 
 Each eval run writes its results and transcripts to `_runtime/evals/`.
 
@@ -377,11 +380,12 @@ The largest gap: code cannot catch a false statement that has no number in it.
 
 - **The guard checks numbers and contacts only.** It misses false statements with no number, numbers the customer typed, and numbers spelled out in words (see [Security](#security-assume-the-model-is-hostile)).
 - **Order verification happens in the chat.** In production we would send a one-time code to the email or SMS on file before showing the order.
-- **The model can skip a tool.** Prompt rules make this rarer, not impossible: with the defaults, 1 of 81 case runs skipped a ticket. Only shipping has a hard check in code. With more time we would add more checks like it and run each case more often.
+- **The model can skip a tool.** Prompt rules make this rarer, not impossible: with the defaults, 2 of the last 243 case runs skipped a tool (a complaint ticket once, an order lookup once). Only shipping has a hard check in code. With more time we would add more checks like it and run each case more often.
 - **Dev-mode tool choice is emulated.** The CLI backend asks the model for a JSON envelope. It is a close copy of native tool use, not the real thing. The final examples and eval numbers come from the SDK.
 - **No cart, checkout or real shipping calculation by CEP.** Shipping outside Campo Grande is "calculated by CEP at checkout".
 - **No holidays or special-date hours.**
-- **No memory across sessions**, by choice (see [Choices](#choices)).
+- **No memory across sessions**, by choice (see [Choices](#choices)). The one exception is the count of failed lookups per order number, which holds no personal data.
+- **Anyone can lock an order for 24 hours** with 3 wrong guesses, because the lock is per order number. The owner can still get a human through a ticket. `_runtime/order_misses.jsonl` grows without cleanup; production would keep it in a database with an expiry.
 - **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth. The judge sees only the messages, not the tool results or the store clock. In one live dev run it marked as resolved a reply that wrongly said the return window had closed.
 - **Session logs grow without rotation.** Each session adds a file to `_runtime/sessions/`, and nothing deletes old ones.
 - **Session logs keep the customer's first name.** `get_order` returns it, and the log stores tool results in full.
