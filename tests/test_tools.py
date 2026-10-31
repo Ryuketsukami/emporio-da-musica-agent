@@ -7,14 +7,18 @@ from src.clock import parse_now
 from src.data import load_store
 from src.policies import load_policies
 from src.session import new_session
-from src.tools import TOOLS, ToolContext, run_tool
+from src.tools import ORDER_LOCK_HOURS, TOOLS, ToolContext, record_order_miss, run_tool
 
 STORE, POLICIES = load_store(), load_policies()
 
 
-def ctx(now="2026-11-02T10:00"):
+def ctx(now="2026-11-02T10:00", misses_path=None):
     t = parse_now(now)
-    return ToolContext(STORE, POLICIES, new_session(t), t, Path(tempfile.mkdtemp()) / "tickets.jsonl")
+    return ToolContext(STORE, POLICIES, new_session(t), t, Path(tempfile.mkdtemp()) / "tickets.jsonl", misses_path)
+
+
+def misses_file():
+    return Path(tempfile.mkdtemp()) / "order_misses.jsonl"
 
 
 class SchemaTest(unittest.TestCase):
@@ -126,6 +130,63 @@ class OrderToolTest(unittest.TestCase):
         locked = run_tool("get_order", {"order_id": 4, "email_or_phone": "lucas.mendes@jmail.com"}, c)
         self.assertNotIn("pedido", locked)
         self.assertIn("bloqueada", locked["erro"])
+
+    def test_miss_says_how_many_attempts_are_left(self):
+        c = ctx()
+        first = run_tool("get_order", {"order_id": 4, "email_or_phone": "x@y.com"}, c)
+        self.assertEqual(first["aviso"], "Restam 2 tentativas.")
+        second = run_tool("get_order", {"order_id": 4, "email_or_phone": "x@y.com"}, c)
+        self.assertEqual((second["tentativas_restantes"], second["aviso"]), (1, "Resta 1 tentativa."))
+        third = run_tool("get_order", {"order_id": 4, "email_or_phone": "x@y.com"}, c)
+        self.assertEqual(third["tentativas_restantes"], 0)
+        self.assertTrue(third["aviso"].startswith("Não restam tentativas"))
+
+    def test_three_misses_on_one_order_lock_it_in_every_chat(self):
+        path = misses_file()
+        for contact in ("a@x.com", "b@x.com", "c@x.com"):  # three separate chats, one miss each
+            run_tool("get_order", {"order_id": 5, "email_or_phone": contact}, ctx(misses_path=path))
+        locked = run_tool("get_order", {"order_id": 5, "email_or_phone": "rafael.pereira@jmail.com"}, ctx(misses_path=path))
+        self.assertNotIn("pedido", locked)
+        self.assertIn("bloqueada", locked["erro"])
+        other = run_tool("get_order", {"order_id": 4, "email_or_phone": "lucas.mendes@jmail.com"}, ctx(misses_path=path))
+        self.assertEqual(other["pedido"], 4)  # other orders stay open
+
+    def test_order_lock_ends_after_the_window(self):
+        path = misses_file()
+        for _ in range(3):
+            record_order_miss(path, 5, parse_now("2026-11-02T10:00"))
+        just_before = ctx(f"2026-11-03T09:59", misses_path=path)
+        self.assertIn("bloqueada", run_tool("get_order", {"order_id": 5, "email_or_phone": "rafael.pereira@jmail.com"}, just_before)["erro"])
+        after = ctx("2026-11-03T10:01", misses_path=path)
+        self.assertEqual(run_tool("get_order", {"order_id": 5, "email_or_phone": "rafael.pereira@jmail.com"}, after)["pedido"], 5)
+        self.assertEqual(ORDER_LOCK_HOURS, 24)
+
+    def test_order_lock_also_counts_unknown_order_numbers(self):
+        path = misses_file()
+        for _ in range(3):
+            run_tool("get_order", {"order_id": 999, "email_or_phone": "a@x.com"}, ctx(misses_path=path))
+        locked = run_tool("get_order", {"order_id": 999, "email_or_phone": "a@x.com"}, ctx(misses_path=path))
+        self.assertIn("bloqueada", locked["erro"])  # same answer as a real order, so a lock reveals nothing
+
+    def test_attempts_left_counts_the_order_too(self):
+        path = misses_file()
+        record_order_miss(path, 5, parse_now("2026-11-02T09:00"))
+        record_order_miss(path, 5, parse_now("2026-11-02T09:30"))
+        miss = run_tool("get_order", {"order_id": 5, "email_or_phone": "x@y.com"}, ctx(misses_path=path))
+        self.assertEqual(miss["tentativas_restantes"], 0)
+
+    def test_miss_file_stores_no_contact(self):
+        path = misses_file()
+        run_tool("get_order", {"order_id": 5, "email_or_phone": "secret@x.com"}, ctx(misses_path=path))
+        line = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(set(line), {"pedido", "em"})
+        self.assertNotIn("secret", path.read_text(encoding="utf-8"))
+
+    def test_bad_line_in_miss_file_is_skipped(self):
+        path = misses_file()
+        path.write_text("not json\n", encoding="utf-8")
+        self.assertEqual(run_tool("get_order", {"order_id": 4, "email_or_phone": "lucas.mendes@jmail.com"},
+                                  ctx(misses_path=path))["pedido"], 4)
 
     def test_return_windows(self):
         r = run_tool("get_order", {"order_id": 4, "email_or_phone": "lucas.mendes@jmail.com"}, ctx("2025-12-26T10:00"))

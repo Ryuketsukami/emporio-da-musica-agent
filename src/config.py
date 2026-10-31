@@ -11,6 +11,7 @@ DATA_DIR = ROOT / "data"
 RUNTIME_DIR = ROOT / "_runtime"
 SESSIONS_DIR = RUNTIME_DIR / "sessions"
 TICKETS_PATH = RUNTIME_DIR / "tickets.jsonl"
+ORDER_MISSES_PATH = RUNTIME_DIR / "order_misses.jsonl"
 PROMPT_FLAGS_PATH = ROOT / "config" / "prompt_flags.toml"
 PRICING_PATH = ROOT / "config" / "pricing.toml"
 # Prompt flags used when LLM_PROMPT_FLAGS is not set at all; an empty LLM_PROMPT_FLAGS turns them all off.

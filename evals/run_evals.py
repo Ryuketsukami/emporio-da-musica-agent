@@ -4,7 +4,8 @@ calls and reply content, independent of any model's self-report."""
 import argparse
 import dataclasses
 import json
-from datetime import datetime
+import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.agent import Agent
@@ -16,7 +17,7 @@ from src.labels import label_session
 from src.llm import make_backend
 from src.policies import load_policies
 from src.session import Session, new_session, save_transcript
-from src.tools import TOOLS
+from src.tools import TOOLS, record_order_miss
 from src.versioning import build_header
 
 DEFAULT_NOW = "2026-11-02T10:00"
@@ -88,7 +89,12 @@ def run_case(case: dict, backend, events_dir: Path | None = None,
     store = load_store()
     policies = load_policies()
     session = new_session(now_fn())
-    agent = Agent(backend, store, policies, session, now_fn, prompt_flags=prompt_flags)
+    misses_dir = tempfile.TemporaryDirectory(prefix="duda-eval-")  # removed when run_case returns
+    misses_path = Path(misses_dir.name) / "order_misses.jsonl"  # so one case cannot lock another
+    for order_id, count in case.get("prior_order_misses", {}).items():
+        for _ in range(count):
+            record_order_miss(misses_path, int(order_id), now_fn() - timedelta(hours=1))
+    agent = Agent(backend, store, policies, session, now_fn, prompt_flags=prompt_flags, order_misses_path=misses_path)
 
     log = None
     if events_dir is not None:
