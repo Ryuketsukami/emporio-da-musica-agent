@@ -3,6 +3,7 @@ import subprocess
 import unittest
 from types import SimpleNamespace as NS
 
+from src.labels import judge
 from src.llm import CliBackend, LLMError, SdkBackend, cli_env, extract_json, render_conversation
 
 TOOLS = [{"name": "get_product", "description": "d", "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}}]
@@ -83,6 +84,20 @@ class CliTest(unittest.TestCase):
     def test_gives_up_after_two_bad_replies(self):
         with self.assertRaises(LLMError):
             CliBackend("sonnet", runner=FakeRunner("x", "y")).call("SYS", HISTORY, TOOLS)
+
+    def test_toolless_rubric_reply_is_plain_text(self):
+        reply = '```json\n{"resolution": "resolved", "resolution_evidence": "Oi", "frustration": 0, "frustration_evidence": ""}\n```'
+        turn = CliBackend("haiku", runner=FakeRunner(reply)).call("SYS", [{"role": "user", "content": "CLIENTE: Oi"}], [])
+        self.assertEqual(turn.text, reply)
+        self.assertEqual(turn.tool_calls, [])
+        self.assertEqual(turn.content, [{"type": "text", "text": reply}])
+        label = judge([{"kind": "customer", "text": "Oi"}], CliBackend("haiku", runner=FakeRunner(reply)))
+        self.assertEqual((label["resolution"], label["frustration"]), ("resolved", 0))
+        self.assertTrue(label["resolution_evidence_found"])
+
+    def test_toolless_envelope_reply_still_reads_text(self):
+        turn = CliBackend("haiku", runner=FakeRunner('{"text": "Oi!", "tool_calls": []}')).call("SYS", HISTORY, [])
+        self.assertEqual(turn.text, "Oi!")
 
     def test_env_drops_api_key_and_effort(self):
         env = cli_env({"PATH": "/bin", "ANTHROPIC_API_KEY": "k", "CLAUDE_EFFORT": "high"})

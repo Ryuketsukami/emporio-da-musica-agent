@@ -217,7 +217,10 @@ class CliBackend:
             ToolCall(id=f"cli_{uuid4().hex[:12]}", name=tc["name"], input=tc["input"])
             for tc in data.get("tool_calls") or []
         ]
-        text = data.get("text")
+        if not tools and "text" not in data and "tool_calls" not in data:
+            text = envelope.get("result", "")  # a tool-less caller (the judge) asked for its own JSON shape
+        else:
+            text = data.get("text")
         content = ([{"type": "text", "text": text}] if text else []) + _content_from_tool_calls(tool_calls)
         return Turn(text=text, tool_calls=tool_calls, usage=usage, content=content)
 
