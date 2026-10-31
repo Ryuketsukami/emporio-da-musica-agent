@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.config import load_settings, parse_env
+from src.config import DEFAULT_PROMPT_FLAGS, load_settings, parse_env
 
 MISSING = Path("/nonexistent/.env")
 
@@ -41,3 +41,9 @@ class LoadSettingsTest(unittest.TestCase):
     def test_dev_flag_values(self):
         for raw, expected in [("1", True), ("yes", True), ("true", True), ("0", False), ("no", False), ("", False)]:
             self.assertEqual(load_settings(MISSING, environ={"LLM_DEV": raw}).dev, expected, raw)
+
+    def test_prompt_flags(self):
+        self.assertEqual(load_settings(MISSING, environ={}).prompt_flags, DEFAULT_PROMPT_FLAGS)
+        self.assertEqual(load_settings(MISSING, environ={"LLM_PROMPT_FLAGS": " a, b ,,"}).prompt_flags, ("a", "b"))
+        self.assertEqual(load_settings(MISSING, environ={"LLM_PROMPT_FLAGS": ""}).prompt_flags, ())
+

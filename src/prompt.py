@@ -1,8 +1,11 @@
 """Duda's system prompt: store policy, tool rules, style, and the per-turn clock line."""
 
+import tomllib
 from datetime import datetime
+from pathlib import Path
 
 from src.clock import time_line
+from src.config import PROMPT_FLAGS_PATH
 from src.data import Store
 from src.policies import SERVED_SECTIONS
 
@@ -59,13 +62,27 @@ Você atende clientes por mensagem de texto, como no WhatsApp da loja. Responda 
 {categorias}"""
 
 
-def system_prompt(policies: dict[str, str], store: Store) -> str:
+def load_prompt_flags(path: Path = PROMPT_FLAGS_PATH) -> dict[str, dict]:
+    """Flag name -> {"why", "text"}, in file order."""
+    with path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def system_prompt(policies: dict[str, str], store: Store, flags: tuple[str, ...] = ()) -> str:
     secoes = "\n".join(f"- {key}: {SECTION_HINTS[key]}" for key in SERVED_SECTIONS)
     categorias = "\n".join(f"- {c.name}" for c in store.categories.values())
     text = _TEMPLATE.replace("{atendimento}", policies["atendimento"])
     text = text.replace("{secoes}", secoes)
     text = text.replace("{categorias}", categorias)
-    return text
+    if not flags:
+        return text
+    known = load_prompt_flags()
+    unknown = [name for name in flags if name not in known]
+    if unknown:
+        raise ValueError(f"Unknown prompt flag(s): {', '.join(unknown)}. Valid flags: {', '.join(known)}")
+    # File order, not request order, so the same set always gives the same prompt and hash.
+    rules = "\n".join(f"- {flag['text']}" for name, flag in known.items() if name in flags)
+    return text + "\n\n# Regras adicionais\n\n" + rules
 
 
 def user_turn(text: str, at: datetime) -> str:

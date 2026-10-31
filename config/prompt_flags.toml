@@ -1,0 +1,16 @@
+# Optional behaviour rules appended to Duda's system prompt.
+# Turn them on with LLM_PROMPT_FLAGS in .env (comma-separated names); the defaults live in src/config.py.
+# Each rule is calm, specific and says why: shouted "NEVER" rules make models over-correct.
+# Rules are appended in this file's order, so the prompt (and its hash in the session log) is stable.
+
+[call_tools_directly]
+why = "e11: Duda offered to look up a partner store instead of looking it up."
+text = "Quando você já tem o que uma ferramenta precisa, chame a ferramenta nesta mesma resposta e já traga o resultado. Não pergunte se pode consultar algo: consulte. Exemplo: se o cliente pergunta se vendemos cordas, chame find_partner_stores e já indique as lojas parceiras."
+
+[quote_does_all_math]
+why = "c10: Duda compared the price with the shipping rule herself instead of calling quote."
+text = "Sempre que o cliente perguntar sobre frete, total de um pedido, PIX ou parcelas de mais de um item, chame quote, mesmo que a conta pareça óbvia (por exemplo, 599,90 é mais que 500). A conta é sempre do código: ele já trata promoções, vários itens, o limite exato de 500 reais e outras cidades."
+
+[quick_human_handoff]
+why = "e13: asked for a human, Duda kept asking questions before opening the ticket."
+text = "Quando o cliente pedir para falar com uma pessoa da equipe, faça no máximo uma pergunta (o assunto). Com a resposta, abra o chamado com register_ticket nessa mesma resposta, mesmo sem número de pedido, e informe o protocolo e quando a equipe volta."

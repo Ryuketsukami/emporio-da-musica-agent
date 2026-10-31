@@ -11,6 +11,9 @@ DATA_DIR = ROOT / "data"
 RUNTIME_DIR = ROOT / "_runtime"
 SESSIONS_DIR = RUNTIME_DIR / "sessions"
 TICKETS_PATH = RUNTIME_DIR / "tickets.jsonl"
+PROMPT_FLAGS_PATH = ROOT / "config" / "prompt_flags.toml"
+# Prompt flags used when LLM_PROMPT_FLAGS is not set at all; an empty LLM_PROMPT_FLAGS turns them all off.
+DEFAULT_PROMPT_FLAGS: tuple[str, ...] = ()
 
 TRUE_VALUES = {"1", "true", "yes"}
 
@@ -26,6 +29,7 @@ class Settings:
     judge: bool = False
     judge_model: str = "claude-haiku-4-5"
     dev_judge_model: str = "haiku"
+    prompt_flags: tuple[str, ...] = DEFAULT_PROMPT_FLAGS
 
 
 def parse_env(text: str) -> dict:
@@ -59,4 +63,6 @@ def load_settings(env_path: Path = ROOT / ".env", environ: Mapping[str, str] | N
         judge=values.get("LLM_JUDGE", "").strip().lower() in TRUE_VALUES,
         judge_model=values.get("LLM_JUDGE_MODEL") or "claude-haiku-4-5",
         dev_judge_model=values.get("LLM_DEV_JUDGE_MODEL") or "haiku",
+        prompt_flags=(tuple(f.strip() for f in values["LLM_PROMPT_FLAGS"].split(",") if f.strip())
+                      if "LLM_PROMPT_FLAGS" in values else DEFAULT_PROMPT_FLAGS),
     )
