@@ -14,7 +14,7 @@ from pathlib import Path
 from src.config import RUNTIME_DIR, SESSIONS_DIR, load_settings
 from src.eventlog import read_events
 from src.labels import RESOLUTIONS, RUBRIC_VERSION, label_session, latest_labels
-from src.llm import make_judge_backend
+from src.llm import judge_model_name, make_judge_backend
 
 GROUP_FIELDS = ("app", "prompt_sha", "model")
 
@@ -114,7 +114,7 @@ def _print_table(summary: dict) -> None:
 def _label_missing(directory: Path, judge_backend) -> None:
     settings = load_settings()
     judge = judge_backend if judge_backend is not None else make_judge_backend(settings)
-    judge_model = settings.dev_judge_model if settings.dev else settings.judge_model
+    judge_model = judge_model_name(settings)
     for path in sorted(directory.glob("*.jsonl")):
         events = read_events(path)
         if _has_current_judge_label(latest_labels(events)):

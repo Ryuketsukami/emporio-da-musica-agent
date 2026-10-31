@@ -236,3 +236,9 @@ def make_judge_backend(settings: Settings) -> SdkBackend | CliBackend:
     if not settings.api_key:
         raise LLMError("LLM_API_KEY is empty; set it in .env or use LLM_DEV=true")
     return SdkBackend(settings.api_key, settings.judge_model, max_tokens=512)
+
+
+def judge_model_name(settings: Settings) -> str:
+    """The judge model name recorded on a `labels` event, matching whichever backend
+    `make_judge_backend` would build."""
+    return settings.dev_judge_model if settings.dev else settings.judge_model

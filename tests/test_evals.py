@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from evals.run_evals import evaluate, load_cases, main, run_case
 from src.config import ROOT
@@ -73,6 +74,15 @@ class RunCaseEventsTest(unittest.TestCase):
         events_dir = Path(tempfile.mkdtemp())
         run_case(case, FakeBackend(text("Oi! Como posso ajudar?")))
         self.assertEqual(list(events_dir.iterdir()), [])
+
+    def test_label_session_failure_does_not_break_the_case(self):
+        case = {"id": "caso-3", "messages": ["oi"]}
+        events_dir = Path(tempfile.mkdtemp())
+        with mock.patch("evals.run_evals.label_session", side_effect=RuntimeError("boom")):
+            replies, called, session = run_case(
+                case, FakeBackend(text("Oi! Como posso ajudar?")), events_dir=events_dir)
+        self.assertEqual(replies, ["Oi! Como posso ajudar?"])
+        self.assertEqual(called, [])
 
 
 if __name__ == "__main__":

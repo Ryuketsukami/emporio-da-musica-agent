@@ -10,7 +10,7 @@ from src.config import SESSIONS_DIR, load_settings
 from src.data import load_store
 from src.eventlog import EventLog, Pseudonymizer, public_contacts
 from src.labels import label_session
-from src.llm import make_backend, make_judge_backend
+from src.llm import judge_model_name, make_backend, make_judge_backend
 from src.policies import load_policies
 from src.session import new_session, save_transcript
 from src.tools import TOOLS
@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None, backend=None, judge_backend=None) -> int
 
     log.write("end")
     judge_on = args.judge or settings.judge
-    judge_model = settings.dev_judge_model if settings.dev else settings.judge_model
+    judge_model = judge_model_name(settings)
     try:
         judge = (judge_backend if judge_backend is not None else make_judge_backend(settings)) if judge_on else None
         label_session(log.path, judge, judge_model if judge_on else None)

@@ -77,27 +77,36 @@ def _called_tools(session: Session) -> list[str]:
 
 
 def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[str], list[str], Session]:
+    """Logging and labelling never break a case: a failure while starting the log keeps the
+    case unlogged (`agent.events` stays `None`); a failure while closing it out is reported but
+    doesn't touch the replies or tool calls already collected."""
     now_text = case.get("now", DEFAULT_NOW)
     now_fn = lambda: parse_now(now_text)
     store = load_store()
     policies = load_policies()
     session = new_session(now_fn())
+    agent = Agent(backend, store, policies, session, now_fn)
 
     log = None
     if events_dir is not None:
-        keep_phones, keep_emails = public_contacts(policies, store)
-        log = EventLog(events_dir / f"{case['id']}.jsonl", Pseudonymizer(keep_phones, keep_emails))
-
-    agent = Agent(backend, store, policies, session, now_fn, events=log)
-    if log is not None:
-        log.write("header", **build_header(session.id, "eval", backend.label, agent.system, TOOLS, case.get("now")))
+        try:
+            keep_phones, keep_emails = public_contacts(policies, store)
+            log = EventLog(events_dir / f"{case['id']}.jsonl", Pseudonymizer(keep_phones, keep_emails))
+            log.write("header", **build_header(session.id, "eval", backend.label, agent.system, TOOLS, case.get("now")))
+            agent.events = log
+        except Exception as exc:
+            print(f"aviso: log do caso {case['id']} não gerado ({type(exc).__name__})")
+            log = None
 
     replies = [agent.reply(text) for text in case["messages"]]
     called = _called_tools(session)
 
     if log is not None:
-        log.write("end")
-        label_session(log.path)
+        try:
+            log.write("end")
+            label_session(log.path)
+        except Exception as exc:
+            print(f"aviso: log do caso {case['id']} não gerado ({type(exc).__name__})")
 
     return replies, called, session
 
