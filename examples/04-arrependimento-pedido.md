@@ -1,18 +1,14 @@
 # Arrependimento de compra
 
-_Gerado por python -m src.cli em 26/12/2025 10:00 (horário de Campo Grande (UTC−4)) · backend sdk:claude-sonnet-5_
+_Gerado por python -m src.cli em 26/12/2025 10:00, horário de Campo Grande (UTC−4) · backend sdk:claude-sonnet-5_
 
 **Cliente:** Me arrependi da minha compra, posso devolver meu pedido?
 
-**Duda:** Oi! Poxa, sem problemas, posso te ajudar com isso 😊
-
-Pra eu verificar as condições de devolução do seu pedido, pode me passar:
-- o *número do pedido*
-- o *e-mail ou telefone* usado na compra
+**Duda:** Claro! Pra eu verificar as condições certinhas, pode me passar o número do pedido e o e-mail ou telefone do cadastro?
 
 **Cliente:** É o pedido 4
 
-**Duda:** Claro! Mas também preciso do *e-mail ou telefone* cadastrado na compra para confirmar sua identidade antes de consultar o pedido 🙂
+**Duda:** Pode me confirmar também o e-mail ou telefone cadastrado no pedido? Preciso disso pra conseguir consultar com segurança.
 
 **Cliente:** l***@jmail.com
 
@@ -20,13 +16,13 @@ Pra eu verificar as condições de devolução do seu pedido, pode me passar:
 
 > ferramenta: read_policy {"section": "trocas_devolucoes"} → {"secao": "trocas_devolucoes", "texto": "## 4. Política de Trocas e Devoluções\n\nA Empório da Música segue as diretrizes do Código de Defesa do Consumidor (Lei
 
-**Duda:** Oi, Lucas! Boa notícia: dá sim pra devolver 🙌
+**Duda:** Boa notícia, Lucas! Sim, dá pra devolver por arrependimento. 👍
 
-Seu pedido 4 (Giannini GF-3D Dreadnought Sunburst, R$ 799,90) foi entregue em 22/12/2025, e o prazo de arrependimento vai até *29/12/2025* — ainda está dentro do prazo!
+Detalhes:
+- Pedido: Giannini GF-3D Dreadnought Sunburst, entregue (previsão 22/12/2025)
+- Prazo de arrependimento: até *29/12/2025* (considerando a previsão de entrega, já que ainda não temos confirmação de entrega real)
+- O produto deve estar na embalagem original, sem sinais de uso, com manuais/acessórios
+- Frete de devolução por nossa conta
+- Reembolso na mesma forma de pagamento (boleto) em até 10 dias úteis
 
-Como funciona:
-- Produto deve estar na embalagem original, sem sinais de uso, com acessórios e manuais
-- O frete de devolução é por conta da loja
-- Reembolso na mesma forma de pagamento (boleto) em até 10 dias úteis após a devolução
-
-Quer que eu encaminhe sua solicitação de devolução?
+Quer que eu já encaminhe sua solicitação de devolução?
