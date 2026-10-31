@@ -104,6 +104,10 @@ def main(argv: list[str] | None = None, backend=None) -> int:
                 continue
             selected.append((name, case))
 
+    if args.only and not selected:
+        print(f"erro: nenhum caso com id {args.only!r} em {', '.join(names)}")
+        return 1
+
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = RUNTIME_DIR / "evals"
     out_dir.mkdir(parents=True, exist_ok=True)

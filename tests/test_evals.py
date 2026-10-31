@@ -1,7 +1,12 @@
 import unittest
 
-from evals.run_evals import evaluate, load_cases
+from evals.run_evals import evaluate, load_cases, main
 from src.config import ROOT
+
+
+class _BoomBackend:
+    def call(self, *args, **kwargs):
+        raise AssertionError("backend should not be called")
 
 
 class EvaluateTest(unittest.TestCase):
@@ -24,6 +29,11 @@ class EvaluateTest(unittest.TestCase):
             self.assertEqual(len({c["id"] for c in cases}), len(cases))
             for c in cases:
                 self.assertTrue(c["messages"])
+
+
+class MainOnlyMissingIdTest(unittest.TestCase):
+    def test_only_missing_id_is_an_error(self):
+        self.assertNotEqual(main(["--only", "nao-existe"], backend=_BoomBackend()), 0)
 
 
 if __name__ == "__main__":
