@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from evals.run_evals import evaluate, load_cases, main, run_case
+from evals.run_evals import DEFAULT_NOW, evaluate, load_cases, main, run_case
 from src.config import ROOT
 from src.eventlog import read_events
 from src.llm import Turn, Usage
@@ -68,6 +68,13 @@ class RunCaseEventsTest(unittest.TestCase):
         self.assertEqual(events[0]["source"], "eval")
         self.assertEqual(events[-1]["kind"], "labels")
         self.assertIsNone(events[-1]["judge"])
+
+    def test_header_now_override_is_the_effective_clock(self):
+        events_dir = Path(tempfile.mkdtemp())
+        run_case({"id": "a", "messages": ["oi"]}, FakeBackend(text("Oi!")), events_dir=events_dir)
+        run_case({"id": "b", "messages": ["oi"], "now": "2025-12-26T10:00"}, FakeBackend(text("Oi!")), events_dir=events_dir)
+        self.assertEqual(read_events(events_dir / "a.jsonl")[0]["now_override"], DEFAULT_NOW)
+        self.assertEqual(read_events(events_dir / "b.jsonl")[0]["now_override"], "2025-12-26T10:00")
 
     def test_without_events_dir_writes_nothing(self):
         case = {"id": "caso-2", "messages": ["oi"]}

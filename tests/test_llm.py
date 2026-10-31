@@ -131,7 +131,7 @@ class CliTest(unittest.TestCase):
             runner = FakeRunner(reply)
             CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
         self.assertEqual(runner.calls[0][1]["env"]["HOME"], "/home/me")
-        self.assertNotIn("USERPROFILE", runner.calls[0][1]["env"])
+        self.assertEqual(runner.calls[0][1]["env"].get("USERPROFILE"), env_without.get("USERPROFILE"))
 
     def test_render_and_extract(self):
         text = render_conversation(HISTORY)

@@ -93,7 +93,7 @@ def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[
         try:
             keep_phones, keep_emails = public_contacts(policies, store)
             log = EventLog(events_dir / f"{case['id']}.jsonl", Pseudonymizer(keep_phones, keep_emails))
-            log.write("header", **build_header(session.id, "eval", backend.label, agent.system, TOOLS, case.get("now")))
+            log.write("header", **build_header(session.id, "eval", backend.label, agent.system, TOOLS, now_text))
             agent.events = log
         except Exception as exc:
             print(f"aviso: log do caso {case['id']} não gerado ({type(exc).__name__})")
