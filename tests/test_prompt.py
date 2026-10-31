@@ -19,6 +19,7 @@ class PromptTest(unittest.TestCase):
             self.assertIn(c.name, sp)
         self.assertIn("português do Brasil", sp)
         self.assertNotIn("{", sp)  # no unfilled template fields
+        self.assertIn("A linha [agora: ...] é a data e a hora oficiais desta conversa", sp)
 
     def test_rules_added_in_the_fix_wave(self):
         sp = system_prompt(POLICIES, STORE)
