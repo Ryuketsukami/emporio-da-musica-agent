@@ -11,7 +11,9 @@ from pathlib import Path
 from src.config import SESSIONS_DIR, TICKETS_PATH
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
-PHONE_RE = re.compile(r"(?:\(\d{2}\)\s?)?\b\d{4,5}-\d{4}\b")
+# A Brazilian phone: optional DDD ("(67) ", "67 ", "67"), then 4-5 + 4 digits with an optional space, dot or
+# hyphen. The lookarounds keep dates, prices, CEPs, CNPJs, protocols and tracking codes out.
+PHONE_RE = re.compile(r"(?<![\w/.,-])(?:\(\d{2}\)\s?|\d{2}[\s.-]?)?\d{4,5}[\s.-]?\d{4}(?!\w)(?![.,/-]\d)")
 
 MAX_TICKETS = 3
 MAX_SUMMARY = 500
