@@ -78,8 +78,9 @@ def _called_tools(session: Session) -> list[str]:
 
 def run_case(case: dict, backend, events_dir: Path | None = None) -> tuple[list[str], list[str], Session]:
     """Logging and labelling never break a case: a failure while starting the log keeps the
-    case unlogged (`agent.events` stays `None`); a failure while closing it out is reported but
-    doesn't touch the replies or tool calls already collected."""
+    case unlogged (`agent.events` stays `None`); a failed write during the case switches the log
+    off (`Agent._emit`); a failure while closing it out is reported but doesn't touch the replies
+    or tool calls already collected."""
     now_text = case.get("now", DEFAULT_NOW)
     now_fn = lambda: parse_now(now_text)
     store = load_store()

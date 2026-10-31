@@ -79,7 +79,11 @@ def main(argv: list[str] | None = None, backend=None, judge_backend=None) -> int
     keep_phones, keep_emails = public_contacts(policies, store)
     log = EventLog(SESSIONS_DIR / f"{session.id}.jsonl", Pseudonymizer(keep_phones, keep_emails))
     agent = Agent(backend, store, policies, session, now_fn, events=log)
-    log.write("header", **build_header(session.id, source, backend.label, agent.system, TOOLS, args.now))
+    try:
+        log.write("header", **build_header(session.id, source, backend.label, agent.system, TOOLS, args.now))
+    except Exception as exc:
+        print(f"aviso: log da sessão desativado ({type(exc).__name__})")
+        agent.events = None
 
     script_title = None
     if args.script:
@@ -87,20 +91,26 @@ def main(argv: list[str] | None = None, backend=None, judge_backend=None) -> int
     else:
         _run_interactive(agent)
 
-    log.write("end")
-    judge_on = args.judge or settings.judge
-    judge_model = judge_model_name(settings)
-    try:
-        judge = (judge_backend if judge_backend is not None else make_judge_backend(settings)) if judge_on else None
-        label_session(log.path, judge, judge_model if judge_on else None)
-    except Exception as exc:
-        print(f"aviso: rótulos não gerados ({type(exc).__name__})")
-
     title = args.title or script_title or DEFAULT_TITLE
     now = now_fn()
     note = f"Gerado por python -m src.cli em {now:%d/%m/%Y %H:%M}, {TZ_LABEL} · backend {backend.label}"
     out_path = args.out if args.out else SESSIONS_DIR / f"{session.id}.md"
     saved = save_transcript(session, title, out_path, note, keep_phones)
+
+    if agent.events is None:  # a failed write switched logging off
+        print(saved)
+        return 0
+
+    # The transcript is already on disk, so a slow or interrupted judge cannot lose it.
+    judge_on = args.judge or settings.judge
+    judge_model = judge_model_name(settings)
+    try:
+        log.write("end")
+        judge = (judge_backend if judge_backend is not None else make_judge_backend(settings)) if judge_on else None
+        label_session(log.path, judge, judge_model if judge_on else None)
+    except Exception as exc:
+        print(f"aviso: rótulos não gerados ({type(exc).__name__})")
+
     print(saved)
     print(log.path)
     return 0

@@ -51,8 +51,14 @@ class Agent:
         self.system = system_prompt(policies, store)
 
     def _emit(self, kind: str, **fields) -> None:
-        if self.events is not None:
+        """Logging only observes: the first failed write switches the log off for the session."""
+        if self.events is None:
+            return
+        try:
             self.events.write(kind, **fields)
+        except Exception as exc:
+            print(f"aviso: log da sessão desativado ({type(exc).__name__})")
+            self.events = None
 
     def allowed_text(self) -> str:
         parts = [self.system, "\n".join(self.policies.values())]
@@ -115,8 +121,9 @@ class Agent:
                 self._emit("error", error=type(exc).__name__)
                 return TECH_ERROR_TEXT
 
-            self._emit("model_call", round=round_no, content=turn.content, model=turn.model,
-                        usage=dataclasses.asdict(turn.usage), latency_ms=latency_ms)
+            if self.events is not None:
+                self._emit("model_call", round=round_no, content=turn.content, model=turn.model,
+                           usage=dataclasses.asdict(turn.usage), latency_ms=latency_ms)
 
             if turn.tool_calls:
                 if round_no == MAX_TOOL_ROUNDS:

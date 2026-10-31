@@ -198,10 +198,34 @@ class EventEmissionTest(unittest.TestCase):
         a.reply("promo?")
         self.assertEqual([e["reason"] for e in read_events(log.path) if e["kind"] == "fallback"], ["tool_cap"])
 
+    def test_log_failure_never_breaks_a_reply(self):
+        class BrokenLog:
+            def __init__(self):
+                self.calls = 0
+
+            def write(self, kind, **fields):
+                self.calls += 1
+                raise OSError("disk full")
+
+        log = BrokenLog()
+        a = Agent(FakeBackend(tool("get_product", {"id_or_name": "Takamine GD20"}), text("O GD20 custa R$ 2.199,00.")),
+                  STORE, POLICIES, new_session(NOW), lambda: NOW, Path(tempfile.mkdtemp()) / "t.jsonl", events=log)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(a.reply("quanto custa o gd20?"), "O GD20 custa R$ 2.199,00.")
+        self.assertIsNone(a.events)
+        self.assertEqual(log.calls, 1)
+        self.assertEqual(buf.getvalue().strip(), "aviso: log da sessão desativado (OSError)")
+
     def test_without_events_nothing_changes(self):
         a = agent(FakeBackend(text("Oi!")))
         self.assertIsNone(a.events)
         self.assertEqual(a.reply("oi"), "Oi!")
+
+    def test_without_events_usage_is_not_converted(self):
+        a = agent(FakeBackend(text("Oi!")))
+        with mock.patch("src.agent.dataclasses.asdict", side_effect=AssertionError("asdict called")):
+            self.assertEqual(a.reply("oi"), "Oi!")
 
 
 class FakeJudge:
@@ -281,3 +305,32 @@ class CliTest(unittest.TestCase):
                              backend=FakeBackend(text("Obrigada!")))
         self.assertEqual(code2, 0)
         self.assertIn("aviso: rótulos não gerados", buf.getvalue())
+
+    def test_header_write_failure_does_not_break_chat(self):
+        d = Path(tempfile.mkdtemp())
+        script = d / "s.txt"
+        script.write_text("oi\n", encoding="utf-8")
+        out = d / "out.md"
+        buf = io.StringIO()
+        with mock.patch.object(cli, "SESSIONS_DIR", Path(tempfile.mkdtemp())), \
+                mock.patch.object(cli.EventLog, "write", side_effect=OSError("disk full")), \
+                contextlib.redirect_stdout(buf):
+            code = cli.main(["--script", str(script), "--now", "2026-11-02T10:00", "--out", str(out)],
+                            backend=FakeBackend(text("Obrigada!")))
+        self.assertEqual(code, 0)
+        self.assertIn("duda> Obrigada!", buf.getvalue())
+        self.assertIn("aviso: log da sessão desativado (OSError)", buf.getvalue())
+        self.assertIn("**Duda:** Obrigada!", out.read_text(encoding="utf-8"))
+
+    def test_transcript_is_saved_before_labelling(self):
+        d = Path(tempfile.mkdtemp())
+        script = d / "s.txt"
+        script.write_text("oi\n", encoding="utf-8")
+        out = d / "out.md"
+        with mock.patch.object(cli, "SESSIONS_DIR", Path(tempfile.mkdtemp())), \
+                mock.patch.object(cli, "label_session", side_effect=KeyboardInterrupt), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(KeyboardInterrupt):
+                cli.main(["--script", str(script), "--now", "2026-11-02T10:00", "--out", str(out)],
+                         backend=FakeBackend(text("Obrigada!")))
+        self.assertIn("**Duda:** Obrigada!", out.read_text(encoding="utf-8"))
