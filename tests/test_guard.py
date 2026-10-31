@@ -77,3 +77,26 @@ class WideGuardTest(unittest.TestCase):
         self.assertTrue(check("Escreva para contato@emporiodamusica.com.br.", allowed).ok)
         self.assertEqual(check("Escreva para golpe@fake.com.br", allowed).problems,
                          ["o e-mail golpe@fake.com.br não veio de nenhuma consulta"])
+
+    def test_ordinary_wording_is_not_a_domain(self):
+        for text in ["p.ex. o Yamaha", "abre às 9h.depois fecha", "obrigada.de nada", "veja o config.py", "Av.Afonso Pena"]:
+            self.assertTrue(check(text, "").ok, text)
+
+    def test_domain_path_and_case_are_checked(self):
+        allowed = "contato@emporiodamusica.com.br"
+        self.assertEqual(check("Acesse emporiodamusica.com.br/golpe", allowed).problems,
+                         ["o link emporiodamusica.com.br/golpe não veio de nenhuma consulta"])
+        self.assertTrue(check("Nosso site: emporiodamusica.com.br.", allowed).ok)
+        self.assertFalse(check("Compre em golpe.COM", "").ok)
+        self.assertFalse(check("Compre em Golpe.Com.Br agora", "").ok)
+
+    def test_country_code_phones(self):
+        self.assertEqual([m.group() for m in PHONE_RE.finditer("liga +5567999998888 já")], ["+5567999998888"])
+        self.assertFalse(check("Liga +5567999998888", "").ok)
+        self.assertTrue(check("Liga +55 67 3341-4444", "Telefone (67) 3341-4444").ok)
+        self.assertFalse(check("Liga +55 11 3341-4444", "Telefone (67) 3341-4444").ok)
+
+    def test_numbers_that_are_not_phones(self):
+        text = "CEP 79202333, de 2008 2025, cartão 4111 1111, safra 2024-2025, código 12345678."
+        self.assertEqual([m.group() for m in PHONE_RE.finditer(text)], [])
+        self.assertTrue(check(text, "").ok)

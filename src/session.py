@@ -11,9 +11,16 @@ from pathlib import Path
 from src.config import SESSIONS_DIR, TICKETS_PATH
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
-# A Brazilian phone: optional DDD ("(67) ", "67 ", "67"), then 4-5 + 4 digits with an optional space, dot or
-# hyphen. The lookarounds keep dates, prices, CEPs, CNPJs, protocols and tracking codes out.
-PHONE_RE = re.compile(r"(?<![\w/.,-])(?:\(\d{2}\)\s?|\d{2}[\s.-]?)?\d{4,5}[\s.-]?\d{4}(?!\w)(?![.,/-]\d)")
+# A Brazilian phone, optionally with +55. With a DDD ("(67) ", "67 ", "67") any separator or none is accepted;
+# without one the hyphen is required ("3341-4444"). The local number starts like a real one: 9 + 4 digits
+# (mobile) or 2-5 + 3 digits (landline). The lookarounds keep dates, year ranges, prices, CEPs, CNPJs,
+# protocols and tracking codes out.
+PHONE_RE = re.compile(
+    r"(?<![\w/.,+-])(?!(?:19|20)\d{2}-(?:19|20)\d{2}\b)"
+    r"(?:(?:\+?55[\s.-]?)?(?:\(\d{2}\)[\s.-]?|\d{2}[\s.-]?)(?:9\d{4}|[2-5]\d{3})[\s.-]?\d{4}"
+    r"|(?:9\d{4}|[2-5]\d{3})-\d{4})"
+    r"(?!\w)(?![.,/-]\d)"
+)
 
 MAX_TICKETS = 3
 MAX_SUMMARY = 500

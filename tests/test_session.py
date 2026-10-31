@@ -27,6 +27,8 @@ class MaskTest(unittest.TestCase):
         for raw, masked in cases.items():
             self.assertEqual(mask(f"fone {raw}."), f"fone {masked}.", raw)
         self.assertEqual(mask("CEP 79202-333, R$ 2.199,00, 29/12/2025"), "CEP 79202-333, R$ 2.199,00, 29/12/2025")
+        self.assertEqual(mask("fone +5567999998888."), "fone +556******8888.")
+        self.assertEqual(mask("CEP 79202333, ano 2024-2025"), "CEP 79202333, ano 2024-2025")
 
     def test_clean_text(self):
         self.assertEqual(clean_text("a\x00b\x1b[31mc\n d", 500), "ab[31mc\n d")
