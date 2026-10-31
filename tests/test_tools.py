@@ -28,12 +28,14 @@ class SchemaTest(unittest.TestCase):
     def test_validation(self):
         c = ctx()
         self.assertEqual(run_tool("rm_rf", {}, c), {"erro": "Ferramenta desconhecida: rm_rf"})
-        self.assertEqual(run_tool("get_product", {"id_or_name": "x", "path": "/etc"}, c), {"erro": "Parâmetro desconhecido: path"})
+        self.assertEqual(run_tool("get_product", {"id_or_name": "x", "path": "/etc"}, c), {"erro": "Parâmetro desconhecido: path. Parâmetros aceitos: id_or_name"})
         self.assertEqual(run_tool("get_product", {}, c), {"erro": "Parâmetro obrigatório ausente: id_or_name"})
         self.assertEqual(run_tool("quote", {"items": [{"product_id": 95, "qty": 11}]}, c), {"erro": "Valor inválido para items"})
         self.assertEqual(run_tool("get_order", {"order_id": True, "email_or_phone": "x"}, c), {"erro": "Valor inválido para order_id"})
-        self.assertEqual(run_tool("read_policy", {"section": "../../etc/passwd"}, c), {"erro": "Valor inválido para section"})
-        self.assertEqual(run_tool("read_policy", {"section": "atendimento"}, c), {"erro": "Valor inválido para section"})
+        self.assertEqual(run_tool("read_policy", {"section": "../../etc/passwd"}, c), {"erro": "Valor inválido para section. Opções: sobre, horario, pagamento, trocas_devolucoes, frete, promocoes, garantia, privacidade"})
+        self.assertEqual(run_tool("read_policy", {"section": "atendimento"}, c), {"erro": "Valor inválido para section. Opções: sobre, horario, pagamento, trocas_devolucoes, frete, promocoes, garantia, privacidade"})
+        self.assertEqual(run_tool("register_ticket", {"type": "elogio", "summary": "x"}, c), {"erro": "Valor inválido para type. Opções: complaint, human"})
+        self.assertTrue(run_tool("search_products", {"category": "Pianos"}, c)["erro"].startswith("Valor inválido para category. Opções: Guitarras, Baixos"))
 
     def test_non_dict_args_never_raises(self):
         c = ctx()

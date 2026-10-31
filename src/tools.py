@@ -294,15 +294,17 @@ def _matches(value, schema: dict) -> bool:
 
 
 def _validate_args(args: dict, properties: dict, required: list[str]) -> str | None:
+    # Errors name the accepted keys and enum options, so the model can correct the call itself.
     for key in args:
         if key not in properties:
-            return f"Parâmetro desconhecido: {key}"
+            return f"Parâmetro desconhecido: {key}. Parâmetros aceitos: {', '.join(properties)}"
     for key in required:
         if key not in args:
             return f"Parâmetro obrigatório ausente: {key}"
     for key, value in args.items():
         if not _matches(value, properties[key]):
-            return f"Valor inválido para {key}"
+            options = properties[key].get("enum")
+            return f"Valor inválido para {key}" + (f". Opções: {', '.join(options)}" if options else "")
     return None
 
 
