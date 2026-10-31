@@ -46,6 +46,8 @@ class CatalogToolsTest(unittest.TestCase):
     def test_search(self):
         r = run_tool("search_products", {"text": "violão", "max_price": 1000}, ctx())
         self.assertEqual((r["total_encontrado"], len(r["resultados"])), (12, 10))
+        self.assertEqual(r["observacao"], "Mostrando os 10 mais baratos de 12. Diga ao cliente que há mais opções e ofereça filtrar.")
+        self.assertNotIn("observacao", run_tool("search_products", {"text": "takamine"}, ctx()))
         self.assertEqual(r["resultados"][0], {"id": 83, "nome": "Tagima Memphis AC-39 Nylon Natural", "categoria": "Violões",
                                               "preco": "R$ 429,90", "promocao": None, "situacao": "disponível"})
 
@@ -84,6 +86,12 @@ class CatalogToolsTest(unittest.TestCase):
                          {"erro": "Kala KA-ABP-CTG Barítono Cedar ainda não está à venda (em breve)."})
         self.assertEqual(run_tool("quote", {"items": [{"product_id": 93, "qty": 3}]}, ctx()),
                          {"erro": "Não temos 3 unidades de Martin D-28 Dreadnought Natural."})
+
+    def test_quote_sums_duplicate_lines_before_stock_check(self):
+        r = run_tool("quote", {"items": [{"product_id": 93, "qty": 2}, {"product_id": 93, "qty": 1}]}, ctx())
+        self.assertEqual(r, {"erro": "Não temos 3 unidades de Martin D-28 Dreadnought Natural."})
+        ok = run_tool("quote", {"items": [{"product_id": 93, "qty": 1}, {"product_id": 93, "qty": 1}]}, ctx())
+        self.assertEqual(ok["subtotal"], "R$ 22.998,00")
 
     def test_promotions(self):
         r = run_tool("list_active_promotions", {}, ctx())

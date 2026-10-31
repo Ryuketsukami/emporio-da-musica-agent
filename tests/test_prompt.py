@@ -20,6 +20,12 @@ class PromptTest(unittest.TestCase):
         self.assertIn("português do Brasil", sp)
         self.assertNotIn("{", sp)  # no unfilled template fields
 
+    def test_rules_added_in_the_fix_wave(self):
+        sp = system_prompt(POLICIES, STORE)
+        self.assertIn("há mais opções", sp)
+        self.assertIn("Não escreva texto junto com chamadas de ferramenta", sp)
+        self.assertIn("previsão de entrega", sp)
+
     def test_is_stable(self):
         self.assertEqual(system_prompt(POLICIES, STORE), system_prompt(POLICIES, STORE))  # cacheable
 

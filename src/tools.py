@@ -118,6 +118,9 @@ def _search_products(args: dict, ctx: ToolContext) -> dict:
     products = search(ctx.store, text=text, category=category, min_cents=min_cents, max_cents=max_cents,
                        include_unavailable=include_unavailable)
     result = {"resultados": [_card(ctx.store, p) for p in products[:SEARCH_LIMIT]], "total_encontrado": len(products)}
+    if len(products) > SEARCH_LIMIT:
+        result["observacao"] = (f"Mostrando os {SEARCH_LIMIT} mais baratos de {len(products)}. "
+                                "Diga ao cliente que há mais opções e ofereça filtrar.")
     if not products:
         if category is not None and not any(p.category == category for p in ctx.store.products.values()):
             result["observacao"] = "No momento não temos modelos dessa categoria."
@@ -151,6 +154,9 @@ def _get_product(args: dict, ctx: ToolContext) -> dict:
 
 def _quote(args: dict, ctx: ToolContext) -> dict:
     lines = []
+    total_qty: dict[int, int] = {}
+    for item in args["items"]:
+        total_qty[item["product_id"]] = total_qty.get(item["product_id"], 0) + item["qty"]
     for item in args["items"]:
         product = ctx.store.products.get(item["product_id"])
         if product is None:
@@ -162,8 +168,8 @@ def _quote(args: dict, ctx: ToolContext) -> dict:
         if product.stock == 0:
             return {"erro": f"{product.name} está temporariamente indisponível."}
         qty = item["qty"]
-        if qty > product.stock:
-            return {"erro": f"Não temos {qty} unidades de {product.name}."}
+        if total_qty[product.id] > product.stock:
+            return {"erro": f"Não temos {total_qty[product.id]} unidades de {product.name}."}
         promo = ctx.store.active_promo(product.id)
         lines.append(QuoteLine(
             product_id=product.id, name=product.name, qty=qty, unit_cents=product.price_cents,
