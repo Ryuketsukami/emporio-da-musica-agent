@@ -303,10 +303,10 @@ and the synthetic partner stores are in [Data handling](#data-handling).
 
 ## Tests, evals and edge cases
 
-194 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 80 of 81 case runs.
+217 unit tests check the code without a model. 27 live cases check the agent end to end. With the default settings, 3 full SDK runs passed 80 of 81 case runs, at about US$ 0.007 per customer message.
 
 ```bash
-python -m unittest discover -s tests -t . -q      # 194 tests, no model calls; the PDF check skips without pypdf
+python -m unittest discover -s tests -t . -q      # 217 tests, no model calls; the PDF check skips without pypdf
 python -m evals.run_evals                         # 27 live cases on the configured backend
 python -m evals.run_evals --file edge --only e09-injecao
 ```
@@ -331,15 +331,16 @@ questions, out of hours, and a false price the customer quotes.
 Single runs are noisy, so the prompt flags were measured with 3 full SDK runs per setting
 (`claude-sonnet-5`, 27 cases each, with the shipping check on in both):
 
-| Prompt flags | Case runs passed | Misses |
-|---|---|---|
-| all three on (default) | 80/81 | `c11` once: explained the warranty windows but did not open the complaint ticket |
-| all off | 80/81 | `e13` once: asked more questions before opening the ticket |
+| Prompt flags | Case runs passed | Misses | Cost per message |
+|---|---|---|---|
+| all four on (default) | 80/81 | `e14` once: opened a ticket instead of a third lookup, so the lockout never came | US$ 0.0069 |
+| all off | 78/81 | `e13` twice: asked more questions before opening the ticket; `e11` once: offered to look up a partner store | US$ 0.0072 |
 
-The totals tie. The cases the flags target do better with them on. Counting an earlier batch of 3 runs
-per setting as well, `e13` failed 3 of 6 runs without the flags and 0 of 6 with them, and `e11` failed
-1 of 6 versus 0 of 6. That earlier batch is not in the totals, because a first version of the shipping
-check broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
+In the `e14` miss no data leaked: the customer's fourth message had the correct e-mail, and it was only the third
+counted lookup. `c11`, which the fourth flag targets, passed all 6 runs; it had failed once in the 6 runs before
+the flag, so the flag's effect is not proven. Across all three batches of 3 runs per setting, `e13` failed
+5 of 9 runs without the flags and 0 of 9 with them, and `e11` failed 2 of 9 versus 0 of 9. The first batch is
+not in any total, because a first version of the shipping check broke two other cases in both settings. `c10` (shipping without `quote`) passed all 6 runs once
 the shipping check was in. `e13` now gives the subject in a second message: the manual's flow (§7.2) is to
 ask what the customer needs first.
 Details per case: [`evals/RESULTS.md`](evals/RESULTS.md).

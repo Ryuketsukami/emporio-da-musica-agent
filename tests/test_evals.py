@@ -120,6 +120,9 @@ class CostTest(unittest.TestCase):
         records = [{"cost_usd": 0.01, "messages": 2}, {"cost_usd": 0.02, "messages": 1}]
         self.assertEqual(cost_line(records), "custo: US$ 0.0300 em 3 mensagens (US$ 0.0100 por mensagem)")
 
+    def test_cost_line_without_messages(self):
+        self.assertEqual(cost_line([{"cost_usd": 0.0, "messages": 0}]), "custo: US$ 0.0000")
+
     def test_cost_line_with_an_unpriced_case(self):
         records = [{"cost_usd": 0.01, "messages": 2}, {"cost_usd": None, "messages": 1}]
         self.assertEqual(cost_line(records), "custo: desconhecido (1 caso sem preço)")

@@ -130,6 +130,8 @@ def cost_line(records: list[dict]) -> str:
         return f"custo: desconhecido ({unpriced} caso{'s' if unpriced > 1 else ''} sem preço)"
     total = sum(r["cost_usd"] for r in records)
     messages = sum(r["messages"] for r in records)
+    if not messages:
+        return f"custo: US$ {total:.4f}"
     return f"custo: US$ {total:.4f} em {messages} mensagens (US$ {total / messages:.4f} por mensagem)"
 
 
