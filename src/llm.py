@@ -228,3 +228,11 @@ def make_backend(settings: Settings) -> SdkBackend | CliBackend:
     if not settings.api_key:
         raise LLMError("LLM_API_KEY is empty; set it in .env or use LLM_DEV=true")
     return SdkBackend(settings.api_key, settings.model)
+
+
+def make_judge_backend(settings: Settings) -> SdkBackend | CliBackend:
+    if settings.dev:
+        return CliBackend(settings.dev_judge_model)
+    if not settings.api_key:
+        raise LLMError("LLM_API_KEY is empty; set it in .env or use LLM_DEV=true")
+    return SdkBackend(settings.api_key, settings.judge_model, max_tokens=512)

@@ -28,6 +28,11 @@ class LoadSettingsTest(unittest.TestCase):
     def test_defaults_when_file_missing(self):
         s = load_settings(MISSING, environ={})
         self.assertEqual((s.api_key, s.model, s.dev, s.dev_model), ("", "claude-sonnet-5", False, "sonnet"))
+        self.assertEqual((s.judge, s.judge_model, s.dev_judge_model), (False, "claude-haiku-4-5", "haiku"))
+
+    def test_judge_flag_true(self):
+        s = load_settings(MISSING, environ={"LLM_JUDGE": "true"})
+        self.assertIs(s.judge, True)
 
     def test_environment_overrides_file(self):
         s = load_settings(self.write("LLM_MODEL=a\nLLM_DEV=false\n"), environ={"LLM_MODEL": "b", "LLM_DEV": "TRUE"})

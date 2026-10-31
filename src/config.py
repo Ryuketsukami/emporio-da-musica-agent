@@ -23,6 +23,9 @@ class Settings:
     model: str
     dev: bool
     dev_model: str
+    judge: bool = False
+    judge_model: str = "claude-haiku-4-5"
+    dev_judge_model: str = "haiku"
 
 
 def parse_env(text: str) -> dict:
@@ -53,4 +56,7 @@ def load_settings(env_path: Path = ROOT / ".env", environ: Mapping[str, str] | N
         model=values.get("LLM_MODEL") or "claude-sonnet-5",
         dev=values.get("LLM_DEV", "").strip().lower() in TRUE_VALUES,
         dev_model=values.get("LLM_DEV_MODEL") or "sonnet",
+        judge=values.get("LLM_JUDGE", "").strip().lower() in TRUE_VALUES,
+        judge_model=values.get("LLM_JUDGE_MODEL") or "claude-haiku-4-5",
+        dev_judge_model=values.get("LLM_DEV_JUDGE_MODEL") or "haiku",
     )
