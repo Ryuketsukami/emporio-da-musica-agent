@@ -44,6 +44,28 @@ class SdkTest(unittest.TestCase):
         self.assertEqual(fake.kwargs["system"], [{"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}])
         self.assertEqual((fake.kwargs["model"], fake.kwargs["tools"], fake.kwargs["messages"]), ("claude-sonnet-5", TOOLS, HISTORY))
 
+    def test_prices_the_call_by_the_model_that_answered(self):
+        resp = NS(content=[NS(type="text", text="Oi")],
+                  usage=NS(input_tokens=1000, output_tokens=100, cache_read_input_tokens=10000, cache_creation_input_tokens=0),
+                  model="claude-sonnet-5-20261001")
+        prices = {"claude-sonnet-5": {"input": 2.0, "output": 10.0, "cache_write": 2.5, "cache_read": 0.2}}
+        turn = SdkBackend("k", "claude-sonnet-5", client=NS(messages=FakeMessages(resp)), prices=prices).call("S", HISTORY, [])
+        self.assertAlmostEqual(turn.cost_usd, 0.002 + 0.001 + 0.002)
+
+    def test_unpriced_model_has_no_cost(self):
+        resp = NS(content=[NS(type="text", text="Oi")],
+                  usage=NS(input_tokens=1, output_tokens=1, cache_read_input_tokens=0, cache_creation_input_tokens=0),
+                  model="claude-new-model")
+        turn = SdkBackend("k", "claude-new-model", client=NS(messages=FakeMessages(resp)), prices={}).call("S", HISTORY, [])
+        self.assertIsNone(turn.cost_usd)
+
+    def test_uses_the_shipped_price_table_by_default(self):
+        resp = NS(content=[NS(type="text", text="Oi")],
+                  usage=NS(input_tokens=1_000_000, output_tokens=0, cache_read_input_tokens=0, cache_creation_input_tokens=0),
+                  model="claude-sonnet-5")
+        turn = SdkBackend("k", "claude-sonnet-5", client=NS(messages=FakeMessages(resp))).call("S", HISTORY, [])
+        self.assertAlmostEqual(turn.cost_usd, 2.0)
+
 
 def envelope(result):
     return json.dumps({"result": result, "usage": {"input_tokens": 3, "output_tokens": 4}})
@@ -72,6 +94,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(kw["env"]["MAX_THINKING_TOKENS"], "0")
         self.assertIsNone(turn.text)
         self.assertIsNone(turn.model)
+        self.assertIsNone(turn.cost_usd)  # subscription, not billed per token
         self.assertEqual([(c.name, c.input) for c in turn.tool_calls], [("get_product", {"id_or_name": "GD20"})])
         self.assertEqual(turn.content, [{"type": "tool_use", "id": turn.tool_calls[0].id, "name": "get_product", "input": {"id_or_name": "GD20"}}])
         self.assertIn("get_product", argv[-1])  # tool list is in the prompt

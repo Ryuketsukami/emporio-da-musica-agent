@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from evals.run_evals import DEFAULT_NOW, evaluate, load_cases, main, run_case
+from evals.run_evals import DEFAULT_NOW, build_record, cost_line, evaluate, load_cases, main, run_case
 from src.config import ROOT
 from src.eventlog import read_events
 from src.llm import Turn, Usage
@@ -102,6 +102,34 @@ class RunCaseEventsTest(unittest.TestCase):
                 case, FakeBackend(text("Oi! Como posso ajudar?")), events_dir=events_dir)
         self.assertEqual(replies, ["Oi! Como posso ajudar?"])
         self.assertEqual(called, [])
+
+
+class CostTest(unittest.TestCase):
+    def test_record_carries_the_case_spend(self):
+        _, _, session = run_case({"id": "x", "messages": ["oi"]}, FakeBackend(priced(text("Oi!"), 0.004, Usage(5, 6, 7, 8))))
+        record = build_record({"id": "x", "messages": ["oi"]}, "cases", [], ["Oi!"], [], session)
+        self.assertEqual(record["cost_usd"], 0.004)
+        self.assertEqual(record["tokens"], {"input": 5, "output": 6, "cache_read": 7, "cache_write": 8})
+        self.assertEqual((record["ok"], record["failures"], record["replies"]), (True, [], ["Oi!"]))
+
+    def test_unpriced_case_has_null_cost(self):
+        _, _, session = run_case({"id": "x", "messages": ["oi"]}, FakeBackend(text("Oi!")))
+        self.assertIsNone(build_record({"id": "x", "messages": ["oi"]}, "cases", [], ["Oi!"], [], session)["cost_usd"])
+
+    def test_cost_line(self):
+        records = [{"cost_usd": 0.01, "messages": 2}, {"cost_usd": 0.02, "messages": 1}]
+        self.assertEqual(cost_line(records), "custo: US$ 0.0300 em 3 mensagens (US$ 0.0100 por mensagem)")
+
+    def test_cost_line_with_an_unpriced_case(self):
+        records = [{"cost_usd": 0.01, "messages": 2}, {"cost_usd": None, "messages": 1}]
+        self.assertEqual(cost_line(records), "custo: desconhecido (1 caso sem preço)")
+
+
+def priced(turn, cost, usage=None):
+    turn.cost_usd = cost
+    if usage is not None:
+        turn.usage = usage
+    return turn
 
 
 if __name__ == "__main__":

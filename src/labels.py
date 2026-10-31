@@ -85,6 +85,8 @@ def transcript_text(events: list[dict]) -> str:
 
 
 def judge(events: list[dict], backend) -> dict:
+    """The judge's labels plus its own `cost_usd`; an error result keeps the cost of a call that answered."""
+    turn = None
     try:
         transcript = transcript_text(events)
         turn = backend.call(JUDGE_SYSTEM, [{"role": "user", "content": transcript}], [])
@@ -102,7 +104,8 @@ def judge(events: list[dict], backend) -> dict:
         if not isinstance(resolution_evidence, str) or not isinstance(frustration_evidence, str):
             raise ValueError("evidence must be a string")
     except Exception as exc:
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        error = {"error": f"{type(exc).__name__}: {exc}"}
+        return error if turn is None else {**error, "cost_usd": turn.cost_usd}
 
     normed_transcript = _norm(transcript)
 
@@ -116,6 +119,7 @@ def judge(events: list[dict], backend) -> dict:
         "frustration_evidence": frustration_evidence,
         "resolution_evidence_found": _found(resolution_evidence),
         "frustration_evidence_found": _found(frustration_evidence),
+        "cost_usd": turn.cost_usd,
     }
 
 

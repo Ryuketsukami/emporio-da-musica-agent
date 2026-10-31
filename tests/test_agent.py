@@ -26,6 +26,13 @@ def tool(name, args, cid="c1"):
     return Turn(None, [ToolCall(cid, name, args)], Usage(), [{"type": "tool_use", "id": cid, "name": name, "input": args}])
 
 
+def priced(turn, cost, usage=None):
+    turn.cost_usd = cost
+    if usage is not None:
+        turn.usage = usage
+    return turn
+
+
 class FakeBackend:
     label = "fake"
 
@@ -216,6 +223,43 @@ class EventEmissionTest(unittest.TestCase):
         self.assertIsNone(a.events)
         self.assertEqual(log.calls, 1)
         self.assertEqual(buf.getvalue().strip(), "aviso: log da sessão desativado (OSError)")
+
+    def test_reply_carries_the_spend_of_all_its_model_calls(self):
+        b = FakeBackend(priced(tool("get_product", {"id_or_name": "Takamine GD20"}), 0.001, Usage(10, 2, 100, 0)),
+                        priced(text("O GD20 custa R$ 2.199,00."), 0.002, Usage(20, 30, 100, 5)))
+        a, log = logged_agent(b)
+        a.reply("quanto custa o gd20?")
+        events = read_events(log.path)
+        self.assertEqual([e["cost_usd"] for e in events if e["kind"] == "model_call"], [0.001, 0.002])
+        reply = events[-1]
+        self.assertAlmostEqual(reply["cost_usd"], 0.003)
+        self.assertEqual(reply["usage"], {"input": 30, "output": 32, "cache_read": 200, "cache_write": 5})
+        self.assertAlmostEqual(a.session.cost_usd, 0.003)
+        self.assertEqual(a.session.usage, Usage(30, 32, 200, 5))
+
+    def test_session_spend_adds_up_across_replies_and_a_guard_retry(self):
+        b = FakeBackend(priced(text("Custa R$ 1.999,00."), 0.01), priced(text("Vou consultar o preço certinho."), 0.02),
+                        priced(text("Oi!"), 0.04))
+        a, log = logged_agent(b)
+        a.reply("preço?")
+        a.reply("oi")
+        replies = [e for e in read_events(log.path) if e["kind"] == "reply"]
+        self.assertEqual([r["cost_usd"] for r in replies], [0.03, 0.04])
+        self.assertAlmostEqual(a.session.cost_usd, 0.07)
+
+    def test_fallback_and_error_carry_spend_too(self):
+        a, log = logged_agent(FakeBackend(priced(text("R$ 1,00"), 0.01), priced(text("R$ 2,00"), 0.01)))
+        a.reply("preço?")
+        self.assertEqual([e["cost_usd"] for e in read_events(log.path) if e["kind"] == "fallback"], [0.02])
+        a2, log2 = logged_agent(FakeBackend(priced(tool("list_active_promotions", {}), 0.01), LLMError("boom")))
+        a2.reply("promo?")
+        self.assertEqual([e["cost_usd"] for e in read_events(log2.path) if e["kind"] == "error"], [0.01])
+
+    def test_one_unpriced_call_makes_the_spend_unknown(self):
+        a, log = logged_agent(FakeBackend(tool("list_active_promotions", {}), priced(text("Sem promoções agora."), 0.01)))
+        a.reply("promo?")
+        self.assertIsNone(read_events(log.path)[-1]["cost_usd"])
+        self.assertIsNone(a.session.cost_usd)
 
     def test_without_events_nothing_changes(self):
         a = agent(FakeBackend(text("Oi!")))

@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.config import SESSIONS_DIR, TICKETS_PATH
+from src.llm import Usage
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 # A Brazilian phone, optionally with +55. With a DDD ("(67) ", "67 ", "67") any separator or none is accepted;
@@ -94,6 +95,8 @@ class Session:
     tickets: int = 0
     tool_results: list[str] = field(default_factory=list)
     customer_texts: list[str] = field(default_factory=list)
+    usage: Usage = field(default_factory=Usage)
+    cost_usd: float | None = 0.0  # None once any model call had no price
 
     def note(self, kind: str, text: str) -> None:
         self.log.append((kind, text))

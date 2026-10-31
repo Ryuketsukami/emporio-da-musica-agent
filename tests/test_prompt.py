@@ -36,7 +36,7 @@ class PromptTest(unittest.TestCase):
 
 
 class PromptFlagsTest(unittest.TestCase):
-    NAMES = ("call_tools_directly", "quote_does_all_math", "quick_human_handoff")
+    NAMES = ("call_tools_directly", "quote_does_all_math", "quick_human_handoff", "register_complaints_directly")
 
     def test_flag_file(self):
         flags = load_prompt_flags()

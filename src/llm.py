@@ -19,6 +19,7 @@ from typing import Mapping
 from uuid import uuid4
 
 from src.config import ROOT, Settings
+from src.pricing import call_cost, load_prices
 
 CLI_RETRY_NOTICE = "\n\nYour previous reply was not valid JSON. Reply with the JSON object only."
 
@@ -57,6 +58,7 @@ class Turn:
     usage: Usage
     content: list[dict]
     model: str | None = None
+    cost_usd: float | None = None  # None: unpriced model, or the CLI's subscription
 
 
 def _content_from_tool_calls(tool_calls: list[ToolCall]) -> list[dict]:
@@ -64,9 +66,10 @@ def _content_from_tool_calls(tool_calls: list[ToolCall]) -> list[dict]:
 
 
 class SdkBackend:
-    def __init__(self, api_key: str, model: str, max_tokens: int = 1024, client=None):
+    def __init__(self, api_key: str, model: str, max_tokens: int = 1024, client=None, prices=None):
         self.model = model
         self.max_tokens = max_tokens
+        self.prices = load_prices() if prices is None else prices
         if client is None:
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
@@ -105,8 +108,9 @@ class SdkBackend:
             cache_read=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
             cache_write=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
         )
+        model = getattr(resp, "model", None)
         return Turn(text="\n".join(texts) if texts else None, tool_calls=tool_calls, usage=usage, content=content,
-                    model=getattr(resp, "model", None))
+                    model=model, cost_usd=call_cost(model or self.model, usage, self.prices))
 
 
 def render_conversation(messages: list[dict]) -> str:

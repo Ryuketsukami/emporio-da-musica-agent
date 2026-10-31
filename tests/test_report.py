@@ -29,8 +29,9 @@ def _header(session_id, source, commit="abc1234567", model="claude-sonnet-5", pr
             "now_override": None}
 
 
-def _write(path: Path, header: dict, labels: dict | None = None, ended: bool = True) -> None:
+def _write(path: Path, header: dict, labels: dict | None = None, ended: bool = True, events: list[dict] = ()) -> None:
     lines = [json.dumps({"t": "2026-11-02T10:00:00+00:00", "kind": "header", **header}, ensure_ascii=False)]
+    lines += [json.dumps({"t": "2026-11-02T10:01:00+00:00", **e}, ensure_ascii=False) for e in events]
     if ended:
         lines.append(json.dumps({"t": "2026-11-02T10:04:00+00:00", "kind": "end"}))
     if labels is not None:
@@ -99,6 +100,30 @@ class ReportTest(unittest.TestCase):
         self.assertIsNone(g2["fallback_rate"])
         self.assertIsNone(g2["guard_hit_rate"])
         self.assertIsNone(g2["tech_error_rate"])
+
+    def test_cost_per_session_and_per_message(self):
+        _write(self.dir / "s1.jsonl", _header("s1", "chat"), events=[
+            {"kind": "customer", "text": "a"}, {"kind": "reply", "text": "b", "cost_usd": 0.01},
+            {"kind": "customer", "text": "c"}, {"kind": "fallback", "text": "d", "cost_usd": 0.02}])
+        _write(self.dir / "s2.jsonl", _header("s2", "chat"), events=[
+            {"kind": "customer", "text": "a"}, {"kind": "error", "error": "LLMError", "cost_usd": 0.0}])
+        summary = summarize(load_sessions([self.dir]))
+        g1 = next(g for g in summary["groups"] if g["version"]["commit"] == "abc1234")
+        self.assertEqual(g1["priced_sessions"], 2)
+        self.assertEqual(g1["cost_per_session"], 0.015)
+        self.assertEqual(g1["cost_per_message"], 0.01)
+
+    def test_sessions_without_a_known_cost_are_left_out_of_cost(self):
+        _write(self.dir / "s1.jsonl", _header("s1", "chat"), events=[
+            {"kind": "customer", "text": "a"}, {"kind": "reply", "text": "b", "cost_usd": 0.01},
+            {"kind": "customer", "text": "c"}, {"kind": "reply", "text": "d", "cost_usd": None}])
+        _write(self.dir / "s2.jsonl", _header("s2", "chat"), events=[  # logged before cost tracking
+            {"kind": "customer", "text": "a"}, {"kind": "reply", "text": "b"}])
+        summary = summarize(load_sessions([self.dir]))
+        g1 = next(g for g in summary["groups"] if g["version"]["commit"] == "abc1234")
+        self.assertEqual(g1["priced_sessions"], 0)
+        self.assertIsNone(g1["cost_per_session"])
+        self.assertIsNone(g1["cost_per_message"])
 
     def test_version_groups_split_on_data_and_tools(self):
         _write(self.dir / "s5.jsonl", _header("s5", "chat", data_sha="d2"))
