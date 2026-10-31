@@ -1,6 +1,9 @@
 import json
+import os
 import subprocess
 import unittest
+from pathlib import Path
+from unittest import mock
 from types import SimpleNamespace as NS
 
 from src.labels import judge
@@ -102,6 +105,33 @@ class CliTest(unittest.TestCase):
     def test_env_drops_api_key_and_effort(self):
         env = cli_env({"PATH": "/bin", "ANTHROPIC_API_KEY": "k", "CLAUDE_EFFORT": "high"})
         self.assertEqual(env, {"PATH": "/bin", "MAX_THINKING_TOKENS": "0"})
+
+    def test_env_sets_home_when_given(self):
+        env = cli_env({"PATH": "/bin", "HOME": "/home/me"}, home="/tmp/empty")
+        self.assertEqual((env["HOME"], env["USERPROFILE"]), ("/tmp/empty", "/tmp/empty"))
+        self.assertEqual(cli_env({"HOME": "/home/me"})["HOME"], "/home/me")
+
+    def test_empty_home_only_with_token(self):
+        reply = '{"text": "Oi!", "tool_calls": []}'
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "t", "HOME": "/home/me"}):
+            runner = FakeRunner(reply, reply)
+            backend = CliBackend("sonnet", runner=runner)
+            backend.call("SYS", HISTORY, TOOLS)
+            backend.call("SYS", HISTORY, TOOLS)
+        homes = [kw["env"]["HOME"] for _, kw in runner.calls]
+        self.assertTrue(Path(homes[0]).name.startswith("duda-cli-home-"))
+        self.addCleanup(os.rmdir, homes[0])
+        self.assertEqual(homes[0], homes[1])
+        self.assertEqual(os.listdir(homes[0]), [])
+        self.assertEqual(runner.calls[0][1]["env"]["USERPROFILE"], homes[0])
+
+        env_without = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_OAUTH_TOKEN"}
+        env_without["HOME"] = "/home/me"
+        with mock.patch.dict(os.environ, env_without, clear=True):
+            runner = FakeRunner(reply)
+            CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
+        self.assertEqual(runner.calls[0][1]["env"]["HOME"], "/home/me")
+        self.assertNotIn("USERPROFILE", runner.calls[0][1]["env"])
 
     def test_render_and_extract(self):
         text = render_conversation(HISTORY)

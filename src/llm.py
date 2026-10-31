@@ -11,6 +11,7 @@ the SDK's — they are not comparable to a production run's.
 import json
 import os
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from typing import Mapping
 from uuid import uuid4
@@ -144,13 +145,18 @@ def extract_json(text: str) -> dict:
         return json.loads(text[start:end + 1])
 
 
-def cli_env(base: Mapping[str, str]) -> dict[str, str]:
+def cli_env(base: Mapping[str, str], home: str | None = None) -> dict[str, str]:
     """The environment the claude CLI gets: no API key (forces subscription login,
-    never API billing), no inherited effort override, and thinking off."""
+    never API billing), no inherited effort override, and thinking off. `home`
+    replaces HOME and USERPROFILE, so the CLI cannot read the account owner's
+    profile (it puts their e-mail into the model's context)."""
     env = dict(base)
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("CLAUDE_EFFORT", None)
     env["MAX_THINKING_TOKENS"] = "0"
+    if home is not None:
+        env["HOME"] = home
+        env["USERPROFILE"] = home
     return env
 
 
@@ -159,10 +165,20 @@ class CliBackend:
         self.model = model
         self.runner = runner
         self.timeout = timeout
+        self._empty_home: str | None = None
 
     @property
     def label(self) -> str:
         return f"cli:{self.model}"
+
+    def _home(self) -> str | None:
+        """An empty temp home, once per instance, but only with CLAUDE_CODE_OAUTH_TOKEN:
+        without the token the CLI's login lives in the real home and must stay reachable."""
+        if "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ:
+            return None
+        if self._empty_home is None:
+            self._empty_home = tempfile.mkdtemp(prefix="duda-cli-home-")
+        return self._empty_home
 
     def _build_prompt(self, messages: list[dict], tools: list[dict]) -> str:
         tool_lines = "\n".join(
@@ -189,7 +205,7 @@ class CliBackend:
             "--no-session-persistence",
             prompt,
         ]
-        proc = self.runner(argv, capture_output=True, text=True, timeout=self.timeout, cwd=str(ROOT), env=cli_env(os.environ))
+        proc = self.runner(argv, capture_output=True, text=True, timeout=self.timeout, cwd=str(ROOT), env=cli_env(os.environ, self._home()))
         if proc.returncode != 0:
             raise LLMError(f"claude cli exited {proc.returncode}: {proc.stderr[-500:]}")
         return proc
