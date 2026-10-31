@@ -298,6 +298,6 @@ Claude Code built this, running as "Straxia", an agent on QUYSS (the author's ow
 5. Live evals ran on the dev CLI backend during the build. The SDK produced the final examples and eval numbers.
 6. A final review of the whole branch found 1 critical and 8 important issues. The critical one: the dev backend dropped the model's own earlier replies from the history. One fix wave fixed all of them test-first, then re-ran both eval sets and regenerated every example.
 
-**Time spent:** about 3 h 20 min of wall-clock on 2026-10-31, from 11:46 to 15:06 UTC. The design interview and spec took
+**Time spent:** about 3 h 20 min of wall-clock on 2026-10-31, from 11:46 to about 15:05 UTC. The design interview and spec took
 about 1 h (11:46 to the first commit, `4979c4b`, at 12:40). The plan, build, final review and fixes took about 2 h 25 min
 (12:40 to the last commit). The times come from `git log`.
