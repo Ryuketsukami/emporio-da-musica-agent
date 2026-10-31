@@ -121,3 +121,22 @@ def check(reply: str, allowed: str) -> Verdict:
             problems.append(problem)
 
     return Verdict(ok=not problems, problems=problems)
+
+
+SHIPPING_PROBLEM = "o frete foi informado sem a ferramenta quote"
+_FRETE_RE = re.compile(r"\bfrete\b", re.IGNORECASE)
+_FREE_RE = re.compile(r"gr[aá]tis|gratuito|sem custo", re.IGNORECASE)
+_PRODUCT_TOOLS = {"get_product", "search_products"}
+
+
+def shipping_without_quote(reply: str, tools_this_turn: set[str]) -> str | None:
+    """A shipping value given right after a product lookup must come from quote: code does every number.
+
+    A general policy answer ("frete grátis acima de R$ 500") with no product lookup is not affected.
+    """
+    if "quote" in tools_this_turn or not (_PRODUCT_TOOLS & tools_this_turn):
+        return None
+    if _FRETE_RE.search(reply) and (_money_matches(reply) or _FREE_RE.search(reply)):
+        return SHIPPING_PROBLEM
+    return None
+

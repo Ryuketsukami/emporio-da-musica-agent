@@ -1,6 +1,6 @@
 import unittest
 
-from src.guard import check, money_cents
+from src.guard import shipping_without_quote, check, money_cents
 from src.session import PHONE_RE
 
 
@@ -100,3 +100,18 @@ class WideGuardTest(unittest.TestCase):
         text = "CEP 79202333, de 2008 2025, cartão 4111 1111, safra 2024-2025, código 12345678."
         self.assertEqual([m.group() for m in PHONE_RE.finditer(text)], [])
         self.assertTrue(check(text, "").ok)
+
+
+class ShippingNeedsQuoteTest(unittest.TestCase):
+    PROBLEM = "o frete foi informado sem a ferramenta quote"
+
+    def test_product_shipping_without_quote_is_flagged(self):
+        self.assertEqual(shipping_without_quote("O frete pra Campo Grande sai grátis!", {"get_product", "read_policy"}), self.PROBLEM)
+        self.assertEqual(shipping_without_quote("Frete: R$ 35,00.", {"search_products"}), self.PROBLEM)
+
+    def test_allowed_cases(self):
+        self.assertIsNone(shipping_without_quote("O frete sai grátis!", {"get_product", "quote"}))
+        self.assertIsNone(shipping_without_quote("Frete grátis acima de R$ 500,00.", {"read_policy"}))
+        self.assertIsNone(shipping_without_quote("O violão custa R$ 599,90.", {"get_product"}))
+        self.assertIsNone(shipping_without_quote("Quer que eu calcule o frete?", {"get_product"}))
+

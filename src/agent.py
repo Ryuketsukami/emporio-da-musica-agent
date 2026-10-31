@@ -10,7 +10,7 @@ from pathlib import Path
 from src.config import TICKETS_PATH
 from src.data import Store
 from src.eventlog import EventLog
-from src.guard import check
+from src.guard import check, shipping_without_quote
 from src.llm import Turn
 from src.prompt import system_prompt, user_turn
 from src.session import Session, TicketLimitError, append_ticket
@@ -40,6 +40,7 @@ class Agent:
         now_fn: Callable[[], datetime],
         tickets_path: Path = TICKETS_PATH,
         events: EventLog | None = None,
+        prompt_flags: tuple[str, ...] = (),
     ):
         self.backend = backend
         self.store = store
@@ -48,7 +49,7 @@ class Agent:
         self.now_fn = now_fn
         self.tickets_path = tickets_path
         self.events = events
-        self.system = system_prompt(policies, store)
+        self.system = system_prompt(policies, store, prompt_flags)
 
     def _emit(self, kind: str, **fields) -> None:
         """Logging only observes: the first failed write switches the log off for the session."""
@@ -109,6 +110,7 @@ class Agent:
         guard_failed_once = False
         problems: list[str] = []
         fallback_reason = "guard"
+        tools_this_turn: set[str] = set()
 
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             try:
@@ -135,6 +137,7 @@ class Agent:
                     session.note("verificacao", f"texto descartado junto com ferramenta: {turn.text.strip()[:120]}")
                 tool_blocks = [block for block in turn.content if block.get("type") == "tool_use"]
                 session.messages.append({"role": "assistant", "content": tool_blocks})
+                tools_this_turn.update(call.name for call in turn.tool_calls)
                 self._run_tools(turn)
                 continue
 
@@ -145,13 +148,14 @@ class Agent:
             else:
                 session.messages.append({"role": "assistant", "content": turn.content})
                 verdict = check(reply_text, self.allowed_text())
-                if verdict.ok:
+                shipping = shipping_without_quote(reply_text, tools_this_turn)
+                if verdict.ok and shipping is None:
                     for idx in sorted(rejected_indices, reverse=True):
                         del session.messages[idx]
                     session.note("duda", reply_text)
                     self._emit("reply", text=reply_text)
                     return reply_text
-                problems = verdict.problems
+                problems = verdict.problems + ([shipping] if shipping else [])
                 rejected_indices.append(len(session.messages) - 1)
                 self._emit("guard", problems=problems, rejected_text=reply_text)
 
