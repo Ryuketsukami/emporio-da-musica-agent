@@ -89,8 +89,8 @@ def run_case(case: dict, backend, events_dir: Path | None = None,
     store = load_store()
     policies = load_policies()
     session = new_session(now_fn())
-    misses_dir = tempfile.TemporaryDirectory(prefix="duda-eval-")  # removed when run_case returns
-    misses_path = Path(misses_dir.name) / "order_misses.jsonl"  # so one case cannot lock another
+    misses_dir = tempfile.TemporaryDirectory(prefix="duda-eval-")
+    misses_path = Path(misses_dir.name) / "order_misses.jsonl"  # one per case, so one case cannot lock another
     for order_id, count in case.get("prior_order_misses", {}).items():
         for _ in range(count):
             record_order_miss(misses_path, int(order_id), now_fn() - timedelta(hours=1))
@@ -117,6 +117,7 @@ def run_case(case: dict, backend, events_dir: Path | None = None,
         except Exception as exc:
             print(f"aviso: log do caso {case['id']} não gerado ({type(exc).__name__})")
 
+    misses_dir.cleanup()
     return replies, called, session
 
 

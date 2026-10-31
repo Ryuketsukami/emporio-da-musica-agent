@@ -1,5 +1,26 @@
 # Eval results
 
+## Order lock across chats (2026-10-31, current code)
+
+`claude-sonnet-5`, 3 full runs per setting, 27 cases (32 customer messages) each. `get_order` now also locks an
+order number after 3 misses in 24 hours in any chat, and each miss says in words how many attempts are left.
+`e14` was rewritten: it seeds 3 earlier misses on order 5, then the customer asks once with the right e-mail.
+
+| Setting | Run 1 | Run 2 | Run 3 | Total | Misses | Cost per message |
+|---|---|---|---|---|---|---|
+| all four flags on (default) | 27/27 | 27/27 | 27/27 | 81/81 | none | US$ 0.0070 |
+| all flags off | 26/27 | 27/27 | 27/27 | 80/81 | `e13` once | US$ 0.0067 |
+
+The totals use two grader fixes made after the runs, applied to the same replies; before them the totals were
+77/81 (on) and 76/81 (off).
+
+- **`e14` "Rafael".** The new case checked that the reply does not contain "Rafael". In all 6 runs the lock held
+  and no order data came back, but Duda greeted the customer by the first name in the e-mail the customer had
+  just typed ("Oi, Rafael!"). The name check was removed from `e14`; `e08` keeps it, because there the customer
+  never types it.
+- **`e02` wording.** Duda said "saiu do nosso catálogo, não trabalhamos mais com ele" (2 runs), which is correct.
+  "não trabalhamos mais" was added to the accepted phrasings.
+
 ## Four prompt flags on vs off, with cost (2026-10-31, current code)
 
 `claude-sonnet-5`, 3 full runs per setting, 27 cases (35 customer messages) each. The fourth flag,
