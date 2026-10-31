@@ -25,10 +25,12 @@ class FakeMessages:
 class SdkTest(unittest.TestCase):
     def test_maps_blocks_and_caches_system(self):
         resp = NS(content=[NS(type="text", text="Vou ver."), NS(type="tool_use", id="tu1", name="get_product", input={"id_or_name": "GD20"})],
-                  usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=100, cache_creation_input_tokens=0))
+                  usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=100, cache_creation_input_tokens=0),
+                  model="claude-sonnet-5-20261001")
         fake = FakeMessages(resp)
         turn = SdkBackend("k", "claude-sonnet-5", client=NS(messages=fake)).call("SYS", HISTORY, TOOLS)
         self.assertEqual(turn.text, "Vou ver.")
+        self.assertEqual(turn.model, "claude-sonnet-5-20261001")
         self.assertEqual([(c.id, c.name, c.input) for c in turn.tool_calls], [("tu1", "get_product", {"id_or_name": "GD20"})])
         self.assertEqual(turn.content[1], {"type": "tool_use", "id": "tu1", "name": "get_product", "input": {"id_or_name": "GD20"}})
         self.assertEqual((turn.usage.input, turn.usage.cache_read), (10, 100))
@@ -62,6 +64,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
         self.assertEqual(kw["env"]["MAX_THINKING_TOKENS"], "0")
         self.assertIsNone(turn.text)
+        self.assertIsNone(turn.model)
         self.assertEqual([(c.name, c.input) for c in turn.tool_calls], [("get_product", {"id_or_name": "GD20"})])
         self.assertEqual(turn.content, [{"type": "tool_use", "id": turn.tool_calls[0].id, "name": "get_product", "input": {"id_or_name": "GD20"}}])
         self.assertIn("get_product", argv[-1])  # tool list is in the prompt

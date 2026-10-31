@@ -53,6 +53,7 @@ class Turn:
     tool_calls: list[ToolCall]
     usage: Usage
     content: list[dict]
+    model: str | None = None
 
 
 def _content_from_tool_calls(tool_calls: list[ToolCall]) -> list[dict]:
@@ -101,7 +102,8 @@ class SdkBackend:
             cache_read=getattr(resp.usage, "cache_read_input_tokens", 0) or 0,
             cache_write=getattr(resp.usage, "cache_creation_input_tokens", 0) or 0,
         )
-        return Turn(text="\n".join(texts) if texts else None, tool_calls=tool_calls, usage=usage, content=content)
+        return Turn(text="\n".join(texts) if texts else None, tool_calls=tool_calls, usage=usage, content=content,
+                    model=getattr(resp, "model", None))
 
 
 def render_conversation(messages: list[dict]) -> str:
