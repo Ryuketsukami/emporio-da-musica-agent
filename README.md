@@ -35,6 +35,8 @@ python -m src.cli                   # chat; type "sair" to quit
 
 No API key? Set `LLM_DEV=true` in `.env`. Each model call then goes through your local `claude` CLI
 and your Claude subscription. The CLI must be installed and logged in.
+On a normally logged-in machine, the `claude` CLI adds the account owner's e-mail to the model's context.
+For clean dev runs, create a token with `claude setup-token` and set `CLAUDE_CODE_OAUTH_TOKEN`, and the backend then runs the CLI with an empty home.
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -255,6 +257,8 @@ can carry a different prompt or data under the same commit, and the hashes tell 
 - An LLM judge, on request (`--judge` or `LLM_JUDGE=true`): Claude Haiku 4.5 reads the chat and returns a resolution (`resolved`, `partial`, `unresolved`, `handed_off`) and a frustration level from 0 to 2, each with a quote. Code checks that each quote is in the chat and records the result as `resolution_evidence_found` and `frustration_evidence_found`. A failed judge call records an error and does not stop the run.
 - Labels can be redone: `python -m scripts.report --label` judges every session that has no valid judge label for the current rubric. It appends a new `labels` event, and the newest one counts. Eval logs get code signals only.
 
+In the live check, two sessions on each backend, the judge labelled all 4 sessions and code found every quote in the chat.
+
 **Report.** `python -m scripts.report` reads the logs in `_runtime/sessions/` (`--dir` picks another folder) and prints rates per version group (commit, prompt hash, model):
 resolution, frustration, fallback, guard hit and technical error, plus the number of handoff tickets. It writes the same
 numbers to `_runtime/summary.json`. It counts `chat` sessions only, because script, example and eval runs are not real
@@ -355,7 +359,7 @@ The largest gap: code cannot catch a false statement that has no number in it.
 - **No cart, checkout or real shipping calculation by CEP.** Shipping outside Campo Grande is "calculated by CEP at checkout".
 - **No holidays or special-date hours.**
 - **No memory across sessions**, by choice (see [Choices](#choices)).
-- **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth.
+- **Judge labels are model opinions.** Code checks that each quoted piece of evidence is in the chat, but a label is not ground truth. The judge sees only the messages, not the tool results or the store clock. In one live dev run it marked as resolved a reply that wrongly said the return window had closed.
 - **Session logs grow without rotation.** Each session adds a file to `_runtime/sessions/`, and nothing deletes old ones.
 - **Out of scope:** WhatsApp integration, a web UI, replies in other languages.
 
