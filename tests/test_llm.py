@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -110,6 +111,27 @@ class CliTest(unittest.TestCase):
         env = cli_env({"PATH": "/bin", "HOME": "/home/me"}, home="/tmp/empty")
         self.assertEqual((env["HOME"], env["USERPROFILE"]), ("/tmp/empty", "/tmp/empty"))
         self.assertEqual(cli_env({"HOME": "/home/me"})["HOME"], "/home/me")
+
+    def test_env_with_home_drops_config_dir(self):
+        self.assertNotIn("CLAUDE_CONFIG_DIR", cli_env({"CLAUDE_CONFIG_DIR": "/home/me/.claude"}, home="/tmp/empty"))
+        self.assertEqual(cli_env({"CLAUDE_CONFIG_DIR": "/home/me/.claude"})["CLAUDE_CONFIG_DIR"], "/home/me/.claude")
+
+    def test_empty_token_keeps_real_home(self):
+        reply = '{"text": "Oi!", "tool_calls": []}'
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "HOME": "/home/me"}):
+            runner = FakeRunner(reply)
+            CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
+        self.assertEqual(runner.calls[0][1]["env"]["HOME"], "/home/me")
+
+    def test_empty_home_is_removed_at_exit(self):
+        reply = '{"text": "Oi!", "tool_calls": []}'
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "t"}), \
+                mock.patch("src.llm.atexit.register") as register:
+            runner = FakeRunner(reply)
+            CliBackend("sonnet", runner=runner).call("SYS", HISTORY, TOOLS)
+        home = runner.calls[0][1]["env"]["HOME"]
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        register.assert_called_once_with(shutil.rmtree, home, ignore_errors=True)
 
     def test_empty_home_only_with_token(self):
         reply = '{"text": "Oi!", "tool_calls": []}'

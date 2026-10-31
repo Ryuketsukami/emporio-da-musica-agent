@@ -8,8 +8,10 @@ listing them, and its usage numbers come from the CLI's own accounting, not
 the SDK's — they are not comparable to a production run's.
 """
 
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -148,8 +150,8 @@ def extract_json(text: str) -> dict:
 def cli_env(base: Mapping[str, str], home: str | None = None) -> dict[str, str]:
     """The environment the claude CLI gets: no API key (forces subscription login,
     never API billing), no inherited effort override, and thinking off. `home`
-    replaces HOME and USERPROFILE, so the CLI cannot read the account owner's
-    profile (it puts their e-mail into the model's context)."""
+    replaces HOME and USERPROFILE and drops CLAUDE_CONFIG_DIR, so the CLI cannot
+    read the account owner's profile (it puts their e-mail into the model's context)."""
     env = dict(base)
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("CLAUDE_EFFORT", None)
@@ -157,6 +159,7 @@ def cli_env(base: Mapping[str, str], home: str | None = None) -> dict[str, str]:
     if home is not None:
         env["HOME"] = home
         env["USERPROFILE"] = home
+        env.pop("CLAUDE_CONFIG_DIR", None)
     return env
 
 
@@ -172,12 +175,13 @@ class CliBackend:
         return f"cli:{self.model}"
 
     def _home(self) -> str | None:
-        """An empty temp home, once per instance, but only with CLAUDE_CODE_OAUTH_TOKEN:
-        without the token the CLI's login lives in the real home and must stay reachable."""
-        if "CLAUDE_CODE_OAUTH_TOKEN" not in os.environ:
+        """An empty temp home, once per instance and removed at exit, but only with a
+        CLAUDE_CODE_OAUTH_TOKEN: without it the CLI's login lives in the real home."""
+        if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
             return None
         if self._empty_home is None:
             self._empty_home = tempfile.mkdtemp(prefix="duda-cli-home-")
+            atexit.register(shutil.rmtree, self._empty_home, ignore_errors=True)
         return self._empty_home
 
     def _build_prompt(self, messages: list[dict], tools: list[dict]) -> str:
