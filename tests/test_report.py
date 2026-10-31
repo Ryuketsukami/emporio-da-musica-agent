@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -21,14 +23,16 @@ def _judge(resolution, frustration):
             "frustration_evidence": "", "resolution_evidence_found": True, "frustration_evidence_found": True}
 
 
-def _header(session_id, source, commit="abc1234567", model="claude-sonnet-5", prompt_sha="p1"):
+def _header(session_id, source, commit="abc1234567", model="claude-sonnet-5", prompt_sha="p1", data_sha="d"):
     return {"schema": 1, "session": session_id, "source": source, "app": {"commit": commit, "dirty": False},
-            "backend": "sdk", "model": model, "prompt_sha": prompt_sha, "tools_sha": "t", "data_sha": "d",
+            "backend": "sdk", "model": model, "prompt_sha": prompt_sha, "tools_sha": "t", "data_sha": data_sha,
             "now_override": None}
 
 
-def _write(path: Path, header: dict, labels: dict | None = None) -> None:
+def _write(path: Path, header: dict, labels: dict | None = None, ended: bool = True) -> None:
     lines = [json.dumps({"t": "2026-11-02T10:00:00+00:00", "kind": "header", **header}, ensure_ascii=False)]
+    if ended:
+        lines.append(json.dumps({"t": "2026-11-02T10:04:00+00:00", "kind": "end"}))
     if labels is not None:
         lines.append(json.dumps({"t": "2026-11-02T10:05:00+00:00", "kind": "labels", **labels}, ensure_ascii=False))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -77,7 +81,7 @@ class ReportTest(unittest.TestCase):
         summary = summarize(load_sessions([self.dir]))
         groups = {tuple(g["version"].values()): g for g in summary["groups"]}
 
-        g1 = groups[("abc1234", "p1", "claude-sonnet-5")]
+        g1 = groups[("abc1234", "p1", "t", "d", "claude-sonnet-5")]
         self.assertEqual(g1["sessions"], 2)
         self.assertEqual(g1["labelled"], 2)
         self.assertEqual(g1["judged"], 2)
@@ -86,7 +90,7 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(g1["frustrated_rate"], 0.5)
         self.assertEqual(g1["fallback_rate"], 0.5)
 
-        g2 = groups[("zzz9999", "p1", "claude-sonnet-5")]
+        g2 = groups[("zzz9999", "p1", "t", "d", "claude-sonnet-5")]
         self.assertEqual(g2["sessions"], 1)
         self.assertEqual(g2["labelled"], 0)
         self.assertEqual(g2["judged"], 0)
@@ -96,6 +100,20 @@ class ReportTest(unittest.TestCase):
         self.assertIsNone(g2["guard_hit_rate"])
         self.assertIsNone(g2["tech_error_rate"])
 
+    def test_version_groups_split_on_data_and_tools(self):
+        _write(self.dir / "s5.jsonl", _header("s5", "chat", data_sha="d2"))
+        summary = summarize(load_sessions([self.dir]))
+        self.assertEqual(list(summary["groups"][0]["version"]), ["commit", "prompt_sha", "tools_sha", "data_sha", "model"])
+        self.assertEqual(len(summary["groups"]), 3)
+
+    def test_old_rubric_judge_label_is_not_judged(self):
+        _write(self.dir / "s1.jsonl", _header("s1", "chat"), {
+            "rubric_version": "0", "signals": _signals(), "judge": _judge("resolved", 0), "judge_model": "m"})
+        summary = summarize(load_sessions([self.dir]))
+        g1 = next(g for g in summary["groups"] if g["version"]["commit"] == "abc1234")
+        self.assertEqual((g1["labelled"], g1["judged"]), (2, 1))
+        self.assertEqual(g1["resolution"]["handed_off"], 1.0)
+
     def test_all_includes_eval(self):
         summary = summarize(load_sessions([self.dir]), include_all=True)
         self.assertEqual(summary["filter"], "all")
@@ -104,7 +122,7 @@ class ReportTest(unittest.TestCase):
 
     def test_main_writes_summary_json_atomically(self):
         runtime = Path(tempfile.mkdtemp())
-        with mock.patch("scripts.report.RUNTIME_DIR", runtime):
+        with mock.patch("scripts.report.RUNTIME_DIR", runtime), contextlib.redirect_stdout(io.StringIO()):
             code = main(["--dir", str(self.dir)])
         self.assertEqual(code, 0)
 
@@ -120,8 +138,13 @@ class ReportTest(unittest.TestCase):
         reply = ('{"resolution": "resolved", "resolution_evidence": "", "frustration": 0, '
                  '"frustration_evidence": ""}')
         runtime = Path(tempfile.mkdtemp())
-        with mock.patch("scripts.report.RUNTIME_DIR", runtime):
+        (self.dir / "running.jsonl").write_text(json.dumps({"t": "x", "kind": "header", **_header("r", "chat")}) + "\n",
+                                                encoding="utf-8")
+        with mock.patch("scripts.report.RUNTIME_DIR", runtime), contextlib.redirect_stdout(io.StringIO()):
             main(["--dir", str(self.dir), "--label"], judge_backend=FakeJudge(reply))
+
+        # A session with no `end` event (still running or crashed) is not labelled.
+        self.assertNotIn("labels", [e["kind"] for e in read_events(self.dir / "running.jsonl")])
 
         # s1 already had a current-rubric judge label: untouched.
         self.assertEqual([e["kind"] for e in read_events(self.dir / "s1.jsonl")].count("labels"), 1)

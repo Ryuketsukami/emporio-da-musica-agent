@@ -72,6 +72,13 @@ class EventLogTest(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text(encoding="utf-8").splitlines()[1])["kind"], "tool")
 
 
+class ReadEventsTest(unittest.TestCase):
+    def test_skips_lines_that_are_not_json(self):
+        path = Path(tempfile.mkdtemp()) / "x.jsonl"
+        path.write_text('{"kind": "header"}\n{"kind": "cust\n\n{"kind": "end"}\n', encoding="utf-8")
+        self.assertEqual([e["kind"] for e in read_events(path)], ["header", "end"])
+
+
 class AppendEventTest(unittest.TestCase):
     def test_writes_line_with_t_and_kind(self):
         path = Path(tempfile.mkdtemp()) / "s" / "x.jsonl"

@@ -16,7 +16,7 @@ from src.eventlog import read_events
 from src.labels import RESOLUTIONS, RUBRIC_VERSION, label_session, latest_labels
 from src.llm import judge_model_name, make_judge_backend
 
-GROUP_FIELDS = ("app", "prompt_sha", "model")
+GROUP_FIELDS = ("commit", "prompt_sha", "tools_sha", "data_sha", "model")
 
 
 def load_sessions(dirs: list[Path]) -> list[dict]:
@@ -38,17 +38,13 @@ def _version_key(header: dict) -> tuple:
     commit = (app.get("commit") or "unknown")[:7]
     if app.get("dirty"):
         commit += "-dirty"
-    return commit, header.get("prompt_sha"), header.get("model")
+    return commit, header.get("prompt_sha"), header.get("tools_sha"), header.get("data_sha"), header.get("model")
 
 
 def _has_current_judge_label(labels: dict | None) -> bool:
+    """A judge label made with the current rubric, without an error."""
     if labels is None or labels.get("rubric_version") != RUBRIC_VERSION:
         return False
-    judge = labels.get("judge")
-    return isinstance(judge, dict) and "error" not in judge
-
-
-def _is_judged(labels: dict) -> bool:
     judge = labels.get("judge")
     return isinstance(judge, dict) and "error" not in judge
 
@@ -68,7 +64,7 @@ def summarize(sessions: list[dict], include_all: bool = False) -> dict:
     for key in sorted(groups, key=lambda k: tuple("" if v is None else v for v in k)):
         group = groups[key]
         labelled = [s for s in group if s["labels"] is not None]
-        judged = [s for s in labelled if _is_judged(s["labels"])]
+        judged = [s for s in labelled if _has_current_judge_label(s["labels"])]
 
         resolution = {
             name: _rate(sum(1 for s in judged if s["labels"]["judge"]["resolution"] == name), len(judged))
@@ -117,6 +113,8 @@ def _label_missing(directory: Path, judge_backend) -> None:
     judge_model = judge_model_name(settings)
     for path in sorted(directory.glob("*.jsonl")):
         events = read_events(path)
+        if not any(e.get("kind") == "end" for e in events):  # still running, or crashed
+            continue
         if _has_current_judge_label(latest_labels(events)):
             continue
         label_session(path, judge, judge_model)

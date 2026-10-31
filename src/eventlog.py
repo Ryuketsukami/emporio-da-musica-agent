@@ -137,10 +137,14 @@ def public_contacts(policies: dict[str, str], store) -> tuple[frozenset[str], fr
 
 
 def read_events(path: Path) -> list[dict]:
-    """Reads a JSONL event log back into a list of dicts, skipping blank lines."""
+    """Reads a JSONL event log back into a list of dicts, skipping blank lines and lines that are
+    not a JSON object (a line cut short by a crash)."""
     events = []
     for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
             continue
-        events.append(json.loads(line))
+        if isinstance(event, dict):
+            events.append(event)
     return events
