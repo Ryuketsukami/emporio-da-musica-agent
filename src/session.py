@@ -27,7 +27,7 @@ PHONE_RE = re.compile(
 # "067998123456"). The guards are PHONE_RE's, so a phone may end before ", ", "/w" or a full stop, but not
 # inside a date, price, protocol, CNPJ or year range.
 LOOSE_PHONE_RE = re.compile(
-    r"(?<![\w/.,])(?!(?:19|20)\d{2}-(?:19|20)\d{2}\b)"
+    r"(?<![\w/.,+-])(?!(?:19|20)\d{2}-(?:19|20)\d{2}\b)"
     r"(?:\+55[ .-]?)?(?:(?:\(0?\d{2}\)|0?\d{2})[ .-]?)?"
     r"(?:9[ .-]?\d{4}[ .-]?\d{4}|[2-5]\d{3}[ .-]?\d{4})"
     r"(?!\w)(?![.,/-]\d)"
